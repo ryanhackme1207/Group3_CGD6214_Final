@@ -56,7 +56,7 @@ int main()
          0.5f, -0.5f, 0.0f,  // Right
          0.0f,  0.5f, 0.0f   // Top
     };
-
+    //hh
     // Create and compile vertex shader
     unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
