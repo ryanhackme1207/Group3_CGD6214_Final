@@ -164,6 +164,7 @@ void calculateBounds(glm::vec3& min_bound, glm::vec3& max_bound, glm::vec3& cent
         max_bound.x = std::max(max_bound.x, v.x);
         max_bound.y = std::max(max_bound.y, v.y);
         max_bound.z = std::max(max_bound.z, v.z);
+        //hello
     }
 
     center = (min_bound + max_bound) * 0.5f;
