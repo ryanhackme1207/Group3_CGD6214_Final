@@ -16,6 +16,9 @@
     <Filter Include="shaders">
       <UniqueIdentifier>{ae01fac7-bd49-4323-8a25-0d3f10871427}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Textures">
+      <UniqueIdentifier>{8483bfa1-3b3c-4ee1-8d11-5c26e6740ce7}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -58,5 +61,16 @@
     <None Include="shaders\vertexShader.vs">
       <Filter>shaders</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="textures\grass.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+    <Image Include="textures\high.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+    <Image Include="textures\road.jpg">
+      <Filter>Textures</Filter>
+    </Image>
   </ItemGroup>
 </Project>

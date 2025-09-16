@@ -146,6 +146,11 @@
     <None Include="shaders\fragmentShader.fs" />
     <None Include="shaders\vertexShader.vs" />
   </ItemGroup>
+  <ItemGroup>
+    <Image Include="textures\grass.jpg" />
+    <Image Include="textures\high.jpg" />
+    <Image Include="textures\road.jpg" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
