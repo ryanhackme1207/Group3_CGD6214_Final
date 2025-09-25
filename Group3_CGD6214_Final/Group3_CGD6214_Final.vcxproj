@@ -131,6 +131,8 @@
   <ItemGroup>
     <ClCompile Include="Building.cpp" />
     <ClCompile Include="camera.cpp" />
+    <ClCompile Include="CityManager.cpp" />
+    <ClCompile Include="Entity.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Node.cpp" />
     <ClCompile Include="shader.cpp" />
@@ -138,6 +140,8 @@
   <ItemGroup>
     <ClInclude Include="Building.h" />
     <ClInclude Include="camera.h" />
+    <ClInclude Include="CityManager.h" />
+    <ClInclude Include="Entity.h" />
     <ClInclude Include="Node.h" />
     <ClInclude Include="shader.h" />
     <ClInclude Include="stb_image.h" />

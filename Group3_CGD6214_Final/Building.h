@@ -1,8 +1,7 @@
-#ifndef BUILDING_H
-#define BUILDING_H
-
-#include "Node.h"
+#pragma once
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include "Node.h"
 
 enum class BuildingType {
     HOUSE,
@@ -21,8 +20,6 @@ public:
     glm::vec3 color;
 
     Building();
-    Building(const glm::vec3& position, const glm::vec3& scale, BuildingType t);
+    Building(const glm::vec3& position, const glm::vec3& scale, BuildingType type);
     virtual ~Building();
 };
-
-#endif // BUILDING_H
