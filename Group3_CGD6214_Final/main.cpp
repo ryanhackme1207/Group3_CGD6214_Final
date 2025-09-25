@@ -22,12 +22,11 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// Enhanced input processing
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    float cameraSpeed = 15.0f * deltaTime; // Faster movement for large city
+    float cameraSpeed = 15.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.ProcessKeyboard(FORWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -37,7 +36,6 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    // Additional keys for vertical movement (like flying in GTA)
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
         camera.Position += camera.WorldUp * cameraSpeed;
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
@@ -89,18 +87,47 @@ unsigned int loadTexture(const char* path) {
     return textureID;
 }
 
+// Create a solid color texture programmatically
+unsigned int createColorTexture(glm::vec3 color) {
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+
+    // Create 1x1 pixel texture with the specified color
+    unsigned char pixelData[3] = {
+        (unsigned char)(color.r * 255),
+        (unsigned char)(color.g * 255),
+        (unsigned char)(color.b * 255)
+    };
+
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, pixelData);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    return textureID;
+}
+
 void renderEntity(Entity* entity, Shader& shader, unsigned int VAO,
     unsigned int texHuman, unsigned int texCar, unsigned int texTree,
-    unsigned int texGrass, unsigned int texMetal) {
+    unsigned int texGrass, unsigned int texMetal,
+    unsigned int texWhiteSkin, unsigned int texBlackSkin, unsigned int texYellowSkin) {
+
+    if (entity->type == EntityType::HUMAN) {
+        // Use the new human rendering system
+        shader.setMat4("model", entity->worldTransform);
+        entity->renderHuman(shader.ID, VAO, texWhiteSkin, texBlackSkin, texYellowSkin);
+        return;
+    }
+
+    // Render other entity types as before
     glm::mat4 model = entity->worldTransform;
     shader.setMat4("model", model);
     shader.setVec3("objectColor", entity->color);
 
-    // Bind appropriate texture based on entity type
     switch (entity->type) {
-    case EntityType::HUMAN:
-        glBindTexture(GL_TEXTURE_2D, texHuman);
-        break;
     case EntityType::CAR:
         glBindTexture(GL_TEXTURE_2D, texCar);
         break;
@@ -114,6 +141,9 @@ void renderEntity(Entity* entity, Shader& shader, unsigned int VAO,
     case EntityType::TRASH_BIN:
         glBindTexture(GL_TEXTURE_2D, texMetal);
         break;
+    default:
+        glBindTexture(GL_TEXTURE_2D, texHuman);
+        break;
     }
 
     glBindVertexArray(VAO);
@@ -126,7 +156,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1920, 1080, "GTA-Style City Simulation", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1920, 1080, "GTA-Style City with Enhanced Humans", NULL, NULL);
     if (window == NULL) {
         std::cout << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
@@ -183,7 +213,6 @@ int main() {
         -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,  0.0f, 1.0f,
          0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,  1.0f, 1.0f,
          0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,  1.0f, 0.0f,
-         0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,  1.0f, 0.0f,
         -0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,  0.0f, 0.0f,
         -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,  0.0f, 1.0f,
 
@@ -213,7 +242,7 @@ int main() {
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    // Load textures
+    // Load existing textures
     unsigned int texGrass = loadTexture("textures/grass.jpg");
     unsigned int texRoad = loadTexture("textures/road.jpg");
     unsigned int texBuilding = loadTexture("textures/building.jpg");
@@ -221,6 +250,11 @@ int main() {
     unsigned int texCar = loadTexture("textures/car.jpg");
     unsigned int texTree = loadTexture("textures/tree.jpg");
     unsigned int texMetal = loadTexture("textures/metal.jpg");
+
+    // Create skin tone textures programmatically
+    unsigned int texWhiteSkin = createColorTexture(glm::vec3(0.95f, 0.87f, 0.8f));   // Light skin
+    unsigned int texBlackSkin = createColorTexture(glm::vec3(0.4f, 0.28f, 0.2f));    // Dark skin  
+    unsigned int texYellowSkin = createColorTexture(glm::vec3(0.98f, 0.85f, 0.65f)); // Asian skin
 
     ourShader.use();
     ourShader.setInt("texture1", 0);
@@ -233,6 +267,10 @@ int main() {
     glm::vec3 lightPos = glm::vec3(50.0f, 100.0f, 50.0f);
     glm::vec3 lightColor = glm::vec3(1.0f, 0.95f, 0.8f);
 
+    std::cout << "Enhanced GTA-Style City with Diverse Humans!" << std::endl;
+    std::cout << "Controls: WASD to move, Mouse to look, Space/Shift for up/down" << std::endl;
+    std::cout << "Features: Walking humans with different skin tones and proper animations" << std::endl;
+
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
@@ -240,7 +278,7 @@ int main() {
 
         processInput(window);
 
-        // Sky gradient background (day/night cycle could be added)
+        // Sky gradient background with day/night cycle
         float timeOfDay = sin(glfwGetTime() * 0.1f) * 0.5f + 0.5f;
         glm::vec3 skyColor = glm::mix(
             glm::vec3(0.1f, 0.1f, 0.2f),  // Night
@@ -284,17 +322,22 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
-        // Render entities
+        // Render entities with enhanced human rendering
         for (const auto& entity : cityManager.entities) {
-            renderEntity(entity.get(), ourShader, VAO, texHuman, texCar, texTree, texGrass, texMetal);
+            renderEntity(entity.get(), ourShader, VAO, texHuman, texCar, texTree,
+                texGrass, texMetal, texWhiteSkin, texBlackSkin, texYellowSkin);
         }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
+    // Cleanup
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+    glDeleteTextures(1, &texWhiteSkin);
+    glDeleteTextures(1, &texBlackSkin);
+    glDeleteTextures(1, &texYellowSkin);
 
     glfwTerminate();
     return 0;

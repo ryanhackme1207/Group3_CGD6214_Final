@@ -220,10 +220,11 @@ bool CityManager::isPositionValid(const glm::vec3& pos, float radius) {
 }
 
 void CityManager::update() {
-    cityRoot.update();
+    cityRoot.update(glm::mat4(1.0f));  // update root with identity matrix
 
-    // Update all entities
+
+    // Update all entities with cityRoot’s world transform
     for (auto& entity : entities) {
-        entity->update();
+        entity->update(cityRoot.worldTransform);
     }
 }
