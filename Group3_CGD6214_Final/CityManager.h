@@ -24,9 +24,23 @@ public:
 
 private:
     void createBuildings();
-    void createRoads();
+    void createDowntownDistrict();
+    void createResidentialAreas();
+    void createIndustrialZone();
+    void createBeachArea();
+    void createAirport();
+    void fillLandWithGrass();
+    void createGridBasedRoads();
+    void createHighwaySystem();
+    void createCityStreets();
+    void createStreetLights();
+    void createAirportRunways();
+    void createParks();
+    void createNaturalFeatures();
     glm::vec3 getRandomPositionOnSidewalk();
     glm::vec3 getRandomPositionOnRoad();
     glm::vec3 getRandomPositionInField();
     bool isPositionValid(const glm::vec3& pos, float radius = 1.0f);
+    bool isRoadArea(float x, float z);
+    bool isBuildingArea(float x, float z);
 };

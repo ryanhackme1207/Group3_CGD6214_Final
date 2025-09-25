@@ -22,11 +22,45 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
+// Mode switching variables
+bool key2Pressed = false;
+bool key3Pressed = false;
+
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    float cameraSpeed = 15.0f * deltaTime;
+    // Mode switching
+    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS && !key2Pressed) {
+        key2Pressed = true;
+        if (camera.Mode == FLY_MODE) {
+            camera.SetMode(WALK_MODE);
+            std::cout << "Switched to Walk Mode" << std::endl;
+        }
+        else {
+            camera.SetMode(FLY_MODE);
+            std::cout << "Switched to Fly Mode" << std::endl;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_RELEASE) {
+        key2Pressed = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS && !key3Pressed) {
+        key3Pressed = true;
+        if (camera.Mode == CAR_MODE) {
+            camera.SetMode(FLY_MODE);
+        }
+        else {
+            camera.SetMode(CAR_MODE);
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_3) == GLFW_RELEASE) {
+        key3Pressed = false;
+    }
+
+    // Movement controls
+    float cameraSpeed = 25.0f * deltaTime; // Increased speed
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.ProcessKeyboard(FORWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -36,10 +70,21 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-        camera.Position += camera.WorldUp * cameraSpeed;
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-        camera.Position -= camera.WorldUp * cameraSpeed;
+    // Vertical movement only in fly mode
+    if (camera.Mode == FLY_MODE) {
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+            camera.Position += camera.WorldUp * cameraSpeed;
+        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+            camera.Position -= camera.WorldUp * cameraSpeed;
+    }
+
+    // Update camera based on mode
+    if (camera.Mode == WALK_MODE) {
+        camera.UpdateWalkMode();
+    }
+    else if (camera.Mode == CAR_MODE) {
+        camera.UpdateCarMode();
+    }
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
@@ -279,7 +324,7 @@ int main() {
         processInput(window);
 
         // Sky gradient background with day/night cycle
-        float timeOfDay = sin(glfwGetTime() * 0.1f) * 0.5f + 0.5f;
+        float timeOfDay = sinf(static_cast<float>(glfwGetTime()) * 0.1f) * 0.5f + 0.5f;
         glm::vec3 skyColor = glm::mix(
             glm::vec3(0.1f, 0.1f, 0.2f),  // Night
             glm::vec3(0.5f, 0.7f, 1.0f),  // Day

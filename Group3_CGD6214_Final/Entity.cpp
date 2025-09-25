@@ -1,6 +1,7 @@
 #include "Entity.h"
 #include <random>
 #include <cmath>
+#include <memory>
 #include <GL/glew.h>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -15,7 +16,7 @@ Entity::Entity() {
     localTransform = glm::mat4(1.0f);
     worldTransform = glm::mat4(1.0f);
 
-    // Human-specific initialization
+    // Human-specific initialization - properly initialize skinType
     skinType = HumanSkinType::WHITE;
     walkCycle = 0.0f;
     stepHeight = 0.0f;
@@ -32,6 +33,7 @@ Entity::Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t) 
     walkCycle = 0.0f;
     stepHeight = 0.0f;
     isWalking = false;
+    skinType = HumanSkinType::WHITE; // Initialize skinType
 
     localTransform = glm::mat4(1.0f);
     localTransform = glm::translate(localTransform, position);
@@ -46,7 +48,7 @@ Entity::Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t) 
 
         initializeHuman(skinType);
         color = getSkinColor(skinType);
-        speed = 0.5f + ((rand() % 100) / 200.0f); // Reduced speed: 0.5-1.0
+        speed = 0.3f + ((rand() % 30) / 100.0f); // Slower walking speed: 0.3-0.6
     }
     else if (type == EntityType::CAR) {
         color = glm::vec3(
@@ -54,7 +56,7 @@ Entity::Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t) 
             (rand() % 100) / 100.0f,
             (rand() % 100) / 100.0f
         );
-        speed = 8.0f + ((rand() % 300) / 100.0f);
+        speed = 1.0f + ((rand() % 50) / 100.0f); // Slower car speed: 1.0-1.5
     }
     else if (type == EntityType::TREE) {
         color = glm::vec3(0.2f, 0.4f, 0.1f);
@@ -111,7 +113,7 @@ void Entity::update(const glm::mat4& parentTransform) {
             updateBodyPartTransforms();
         }
 
-        if (fmod(animationTime, 5.0f + (rand() % 300) / 100.0f) < 0.016f) { // Longer intervals between moves
+        if (fmod(animationTime, 8.0f + (rand() % 400) / 100.0f) < 0.016f) { // Much longer intervals between moves
             moveRandomly();
         }
     }
@@ -121,20 +123,20 @@ void Entity::update(const glm::mat4& parentTransform) {
 
 void Entity::updateHumanAnimation() {
     if (isMoving) {
-        walkCycle += 3.0f * 0.016f; // Reduced from 8.0f to 3.0f for slower animation
+        walkCycle += 1.5f * 0.016f; // Much slower animation for smoother movement
         isWalking = true;
         stepHeight = 0.0f;
 
-        float armSwing = sin(walkCycle) * 0.2f; // Reduced arm swing
-        float legSwing = sin(walkCycle) * 0.15f; // Reduced leg swing
+        float armSwing = sinf(walkCycle) * 0.2f; // Reduced arm swing
+        float legSwing = sinf(walkCycle) * 0.15f; // Reduced leg swing
 
         bodyParts[2].rotation.x = armSwing;
         bodyParts[3].rotation.x = -armSwing;
         bodyParts[4].rotation.x = legSwing;
         bodyParts[5].rotation.x = -legSwing;
 
-        bodyParts[1].localPosition.y = 0.8f + sin(walkCycle * 2.0f) * 0.01f; // Reduced bounce
-        bodyParts[0].localPosition.y = 1.5f + sin(walkCycle * 2.0f) * 0.01f;
+        bodyParts[1].localPosition.y = 0.8f + sinf(walkCycle * 2.0f) * 0.01f; // Reduced bounce
+        bodyParts[0].localPosition.y = 1.5f + sinf(walkCycle * 2.0f) * 0.01f;
     }
     else {
         isWalking = false;
@@ -174,11 +176,11 @@ void Entity::moveRandomly() {
     float range = (type == EntityType::CAR) ? 30.0f : 10.0f; // Reduced human range
     glm::vec3 currentPos = glm::vec3(localTransform[3]);
 
-    // Generate truly random target across the entire map
+    // Generate random target within reasonable city bounds
     glm::vec3 randomTarget(
-        -35.0f + ((rand() % 100) / 100.0f) * 70.0f,  // Random X from -35 to 35
-        currentPos.y,
-        -35.0f + ((rand() % 100) / 100.0f) * 70.0f   // Random Z from -35 to 35
+        -30.0f + ((rand() % 100) / 100.0f) * 60.0f,  // Random X from -30 to 30
+        -0.9f,  // Keep all entities at ground level
+        -30.0f + ((rand() % 100) / 100.0f) * 60.0f   // Random Z from -30 to 30
     );
 
     setTarget(randomTarget);
@@ -201,22 +203,25 @@ void Entity::updateMovement() {
     localTransform = glm::mat4(1.0f);
     currentPos += movement;
 
-    localTransform = glm::translate(localTransform, currentPos);
-
     if (type == EntityType::HUMAN) {
-        currentPos.y = 0.0f + stepHeight;
+        currentPos.y = -0.9f + stepHeight; // Ensure humans stay at ground level
         if (glm::length(movement) > 0.01f) {
-            float angle = atan2(movement.x, movement.z);
+            float angle = atan2f(movement.x, movement.z);
             localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
         }
     }
 
+    localTransform = glm::translate(localTransform, currentPos);
+
     if (type == EntityType::CAR) {
+        currentPos.y = -0.8f; // Ensure cars stay at road level
+        localTransform = glm::translate(glm::mat4(1.0f), currentPos);
+
         glm::vec3 scale = glm::vec3(2.0f, 1.0f, 4.0f);
         localTransform = glm::scale(localTransform, scale);
 
         if (glm::length(movement) > 0.01f) {
-            float angle = atan2(movement.x, movement.z);
+            float angle = atan2f(movement.x, movement.z);
             localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
         }
     }
