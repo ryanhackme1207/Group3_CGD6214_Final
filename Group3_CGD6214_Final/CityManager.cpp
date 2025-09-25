@@ -77,7 +77,7 @@ void CityManager::createBuildings() {
     createDowntownDistrict();
     createResidentialAreas();
     createIndustrialZone();
-    createBeachArea();
+ 
 }
 
 void CityManager::createDowntownDistrict() {
@@ -181,20 +181,6 @@ void CityManager::createIndustrialZone() {
     }
 }
 
-void CityManager::createBeachArea() {
-    // Beach boardwalk buildings - smaller
-    for (int i = 0; i < 3; ++i) {
-        float x = -20.0f + i * 12.0f;
-        float z = 30.0f;
-
-        float height = 2.0f + (rand() % 3);
-        glm::vec3 scale = glm::vec3(3, height, 2);
-
-        auto beachBuilding = std::make_unique<Building>(glm::vec3(x, 0, z), scale, BuildingType::HOUSE);
-        cityRoot.addChild(beachBuilding.get());
-        buildings.push_back(std::move(beachBuilding));
-    }
-}
 
 void CityManager::createGridBasedRoads() {
     createHighwaySystem();
@@ -288,14 +274,6 @@ void CityManager::createCityStreets() {
         }
     }
 
-    // Beach coastal road
-    auto coastalRoad = std::make_unique<Building>(
-        glm::vec3(0, -1.35f, 35),
-        glm::vec3(60, 0.1f, 4),
-        BuildingType::ROAD
-    );
-    cityRoot.addChild(coastalRoad.get());
-    buildings.push_back(std::move(coastalRoad));
 
     createStreetLights();
 }
@@ -364,12 +342,9 @@ void CityManager::fillLandWithGrass() {
 
             BuildingType terrainType = BuildingType::FIELD;
 
-            // Beach areas
-            if (z > 32.0f) {
-                tileSize.y = 0.01f;
-            }
+           
             // Downtown areas
-            else if (fabsf(x) < 20.0f && fabsf(z) < 20.0f) {
+            if (fabsf(x) < 20.0f && fabsf(z) < 20.0f) {
                 tileSize.y = 0.015f;
             }
 
@@ -436,22 +411,7 @@ void CityManager::createParks() {
 }
 
 void CityManager::createNaturalFeatures() {
-    // Beach vegetation - smaller area
-    for (int i = 0; i < 15; ++i) {
-        float x = -40.0f + ((rand() % 100) / 100.0f) * 80.0f;
-        float z = 33.0f + ((rand() % 100) / 100.0f) * 6.0f;
-
-        if (isRoadArea(x, z)) continue;
-
-        float size = 0.6f + (rand() % 30) / 100.0f;
-        auto beachGrass = std::make_unique<Entity>(
-            glm::vec3(x, -0.83f, z),
-            glm::vec3(size, 0.12f, size),
-            EntityType::GRASS_PATCH
-        );
-        cityRoot.addChild(beachGrass.get());
-        entities.push_back(std::move(beachGrass));
-    }
+   
 }
 
 void CityManager::spawnHumans(int count) {
@@ -538,9 +498,12 @@ glm::vec3 CityManager::getRandomPositionOnSidewalk() {
         }
     }
     else {
-        // Beach area
-        x = -30.0f + ((rand() % 100) / 100.0f) * 60.0f;
-        z = 30.0f + ((rand() % 100) / 100.0f) * 10.0f;
+        // Fallback: use downtown sidewalks logic for areaChoice == 2
+        x = -15.0f + ((rand() % 100) / 100.0f) * 30.0f;
+        z = -15.0f + ((rand() % 100) / 100.0f) * 30.0f;
+
+        if (fmod(abs((int)x), 6) < 2) x += (x > 0) ? 3.0f : -3.0f;
+        if (fmod(abs((int)z), 6) < 2) z += (z > 0) ? 3.0f : -3.0f;
     }
 
     return glm::vec3(x, -0.9f, z);
@@ -634,25 +597,18 @@ glm::vec3 CityManager::getRandomPositionInField() {
 }
 
 bool CityManager::isPositionValid(const glm::vec3& pos, float radius) {
-    // Relaxed validation - check city boundaries
-    const float cityLimit = 45.0f; // More lenient boundary
+    const float cityLimit = 45.0f;
     if (fabsf(pos.x) > cityLimit || fabsf(pos.z) > cityLimit) {
         return false;
     }
-
-    // Simplified collision check - only check against very close entities
     for (const auto& entity : entities) {
-        if (entity->type == EntityType::LAMP_POST || entity->type == EntityType::TRASH_BIN) {
-            continue; // Skip furniture for less strict validation
-        }
-
+        // Check all entities, not just some types
         glm::vec3 entityPos = glm::vec3(entity->localTransform[3]);
         float distance = glm::distance(pos, entityPos);
-        if (distance < radius * 0.5f) { // Reduced collision radius
+        if (distance < radius) { // Use full radius, not 0.5x
             return false;
         }
     }
-
     return true;
 }
 

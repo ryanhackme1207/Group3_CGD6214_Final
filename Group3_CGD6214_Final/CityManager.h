@@ -27,15 +27,14 @@ private:
     void createDowntownDistrict();
     void createResidentialAreas();
     void createIndustrialZone();
-    void createBeachArea();
-    void createAirport();                 // Removed for smaller map
+             // Removed for smaller map
 
     // Road creation methods
     void createGridBasedRoads();
     void createHighwaySystem();
     void createCityStreets();
     void createStreetLights();
-    void createAirportRunways();          // Removed for smaller map
+         // Removed for smaller map
 
     // Terrain methods
     void fillLandWithGrass();
@@ -45,8 +44,7 @@ private:
     // Entity spawning methods
     void spawnHumans(int count);
     void spawnCars(int count);
-    void spawnTrees(int count);
-    void spawnGrass(int count);           // Deprecated - using createNaturalFeatures instead
+    void spawnTrees(int count);          
     void spawnStreetFurniture(int count);
 
     // Position generation methods
