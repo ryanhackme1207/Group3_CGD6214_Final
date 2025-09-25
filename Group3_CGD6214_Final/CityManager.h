@@ -1,59 +1,40 @@
+﻿// CityManager.h
 #pragma once
-
-#include "Node.h"
-#include "Building.h"
 #include "Entity.h"
 #include <vector>
-#include <memory>
-#include <glm/glm.hpp>
+#include <random>
+
+struct Road {
+    float x, y, z;
+    float length, width;
+    bool isHorizontal; // 添加方向标识
+};
+
+struct Building {
+    float x, y, z;
+    float width, depth, height;
+};
 
 class CityManager {
+private:
+    std::vector<Road> roads;
+    std::vector<Building> buildings;
+    std::vector<Entity> entities;
+
+    std::mt19937 rng;
+    std::uniform_real_distribution<float> dist;
+
 public:
-    CityManager();
-    ~CityManager();
+    CityManager(int seed = 0);
+    void generateCity(int gridSize, float spacing);
+    void spawnEntities(int numHumans, int numCars, int numTrees, int numFurniture);
+    void update(float deltaTime);
 
-    void initializeCity();
-    void update();
-
-    // Public members for rendering
-    Node cityRoot;
-    std::vector<std::unique_ptr<Building>> buildings;
-    std::vector<std::unique_ptr<Entity>> entities;
+    const std::vector<Entity>& getEntities() const { return entities; }
+    const std::vector<Building>& getBuildings() const { return buildings; }
+    const std::vector<Road>& getRoads() const { return roads; }
 
 private:
-    // Building creation methods
-    void createBoundaryWalls();           // New method for creating boundary walls
-    void createBuildings();
-    void createDowntownDistrict();
-    void createResidentialAreas();
-    void createIndustrialZone();
-             // Removed for smaller map
-
-    // Road creation methods
-    void createGridBasedRoads();
-    void createHighwaySystem();
-    void createCityStreets();
-    void createStreetLights();
-         // Removed for smaller map
-
-    // Terrain methods
-    void fillLandWithGrass();
-    void createParks();
-    void createNaturalFeatures();
-
-    // Entity spawning methods
-    void spawnHumans(int count);
-    void spawnCars(int count);
-    void spawnTrees(int count);          
-    void spawnStreetFurniture(int count);
-
-    // Position generation methods
-    glm::vec3 getRandomPositionOnSidewalk();
-    glm::vec3 getRandomPositionOnRoad();
-    glm::vec3 getRandomPositionInField();
-
-    // Validation and constraint methods
-    bool isPositionValid(const glm::vec3& pos, float radius);
-    bool isRoadArea(float x, float z);
-    bool isBuildingArea(float x, float z);
+    void generateRoads(int gridSize, float spacing);
+    void generateBuildings(int gridSize, float spacing);
 };

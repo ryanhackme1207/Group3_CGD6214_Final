@@ -9,12 +9,13 @@
 #include "shader.h"
 #include "camera.h"
 #include "CityManager.h"
+#include "Entity.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 // Camera
-Camera camera(glm::vec3(0.0f, 8.0f, 25.0f));
+Camera camera(glm::vec3(0.0f, 15.0f, 30.0f)); // 提高视角
 float lastX = 1280.0f / 2.0;
 float lastY = 720.0f / 2.0;
 bool firstMouse = true;
@@ -22,45 +23,10 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// Mode switching variables
-bool key2Pressed = false;
-bool key3Pressed = false;
-
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // Mode switching
-    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS && !key2Pressed) {
-        key2Pressed = true;
-        if (camera.Mode == FLY_MODE) {
-            camera.SetMode(WALK_MODE);
-            std::cout << "Switched to Walk Mode" << std::endl;
-        }
-        else {
-            camera.SetMode(FLY_MODE);
-            std::cout << "Switched to Fly Mode" << std::endl;
-        }
-    }
-    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_RELEASE) {
-        key2Pressed = false;
-    }
-
-    if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS && !key3Pressed) {
-        key3Pressed = true;
-        if (camera.Mode == CAR_MODE) {
-            camera.SetMode(FLY_MODE);
-        }
-        else {
-            camera.SetMode(CAR_MODE);
-        }
-    }
-    if (glfwGetKey(window, GLFW_KEY_3) == GLFW_RELEASE) {
-        key3Pressed = false;
-    }
-
-    // Movement controls
-    float cameraSpeed = 25.0f * deltaTime; // Increased speed
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.ProcessKeyboard(FORWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -70,21 +36,12 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    // Vertical movement only in fly mode
-    if (camera.Mode == FLY_MODE) {
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-            camera.Position += camera.WorldUp * cameraSpeed;
-        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-            camera.Position -= camera.WorldUp * cameraSpeed;
-    }
-
-    // Update camera based on mode
-    if (camera.Mode == WALK_MODE) {
-        camera.UpdateWalkMode();
-    }
-    else if (camera.Mode == CAR_MODE) {
-        camera.UpdateCarMode();
-    }
+    // Fly up/down
+    float cameraSpeed = 15.0f * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        camera.Position += camera.WorldUp * cameraSpeed;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        camera.Position -= camera.WorldUp * cameraSpeed;
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
@@ -132,76 +89,58 @@ unsigned int loadTexture(const char* path) {
     return textureID;
 }
 
-// Create a solid color texture programmatically
-unsigned int createColorTexture(glm::vec3 color) {
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
-
-    // Create 1x1 pixel texture with the specified color
-    unsigned char pixelData[3] = {
-        (unsigned char)(color.r * 255),
-        (unsigned char)(color.g * 255),
-        (unsigned char)(color.b * 255)
-    };
-
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, pixelData);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    return textureID;
+// Helper function to get entity position from transform matrix
+glm::vec3 getPositionFromTransform(const glm::mat4& transform) {
+    return glm::vec3(transform[3]);
 }
 
-void renderEntity(Entity* entity, Shader& shader, unsigned int VAO,
-    unsigned int texHuman, unsigned int texCar, unsigned int texTree,
-    unsigned int texGrass, unsigned int texMetal,
-    unsigned int texWhiteSkin, unsigned int texBlackSkin, unsigned int texYellowSkin) {
+// Helper function to create a simple model matrix for non-human entities
+glm::mat4 createEntityModelMatrix(const Entity& entity) {
+    glm::vec3 position = getPositionFromTransform(entity.worldTransform);
 
-    if (entity->type == EntityType::HUMAN) {
-        // Use the new human rendering system
-        shader.setMat4("model", entity->worldTransform);
-        entity->renderHuman(shader.ID, VAO, texWhiteSkin, texBlackSkin, texYellowSkin);
-        return;
-    }
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, position);
 
-    // Render other entity types as before
-    glm::mat4 model = entity->worldTransform;
-    shader.setMat4("model", model);
-    shader.setVec3("objectColor", entity->color);
+    glm::vec3 scale(0.5f);
 
-    switch (entity->type) {
+    switch (entity.type) {
     case EntityType::CAR:
-        glBindTexture(GL_TEXTURE_2D, texCar);
+        scale = glm::vec3(1.5f, 0.8f, 3.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.4f, 0.0f));
         break;
     case EntityType::TREE:
-        glBindTexture(GL_TEXTURE_2D, texTree);
-        break;
-    case EntityType::GRASS_PATCH:
-        glBindTexture(GL_TEXTURE_2D, texGrass);
+        scale = glm::vec3(1.2f, 2.5f, 1.2f);
+        model = glm::translate(model, glm::vec3(0.0f, 1.25f, 0.0f));
         break;
     case EntityType::LAMP_POST:
+        scale = glm::vec3(0.2f, 2.0f, 0.2f);
+        model = glm::translate(model, glm::vec3(0.0f, 1.0f, 0.0f));
+        break;
     case EntityType::TRASH_BIN:
-        glBindTexture(GL_TEXTURE_2D, texMetal);
+        scale = glm::vec3(0.6f, 0.8f, 0.6f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.4f, 0.0f));
+        break;
+    case EntityType::GRASS_PATCH:
+        scale = glm::vec3(4.0f, 0.1f, 4.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.05f, 0.0f));
         break;
     default:
-        glBindTexture(GL_TEXTURE_2D, texHuman);
+        model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
         break;
     }
 
-    glBindVertexArray(VAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    model = glm::scale(model, scale);
+    return model;
 }
 
 int main() {
+    // GLFW init
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1920, 1080, "GTA-Style City with Enhanced Humans", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "City Simulation with Wide Roads", NULL, NULL);
     if (window == NULL) {
         std::cout << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
@@ -219,158 +158,178 @@ int main() {
     }
 
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     Shader ourShader("shaders/vertexShader.vs", "shaders/fragmentShader.fs");
 
-    // Enhanced cube vertices with better normals
+    // Cube vertices
     float vertices[] = {
-        // positions          // normals           // texture coords
-        -0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  0.0f, 0.0f,
-         0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  1.0f, 0.0f,
-         0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  1.0f, 1.0f,
-         0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  1.0f, 1.0f,
-        -0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  0.0f, 1.0f,
-        -0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,  0.0f, 0.0f,
+        -0.5f,-0.5f,-0.5f,  0.0f,0.0f,-1.0f,  0.0f,0.0f,
+         0.5f,-0.5f,-0.5f,  0.0f,0.0f,-1.0f,  1.0f,0.0f,
+         0.5f, 0.5f,-0.5f,  0.0f,0.0f,-1.0f,  1.0f,1.0f,
+         0.5f, 0.5f,-0.5f,  0.0f,0.0f,-1.0f,  1.0f,1.0f,
+        -0.5f, 0.5f,-0.5f,  0.0f,0.0f,-1.0f,  0.0f,1.0f,
+        -0.5f,-0.5f,-0.5f,  0.0f,0.0f,-1.0f,  0.0f,0.0f,
 
-        -0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f,
-         0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  1.0f, 1.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  1.0f, 1.0f,
-        -0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f,
-        -0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f,
+        -0.5f,-0.5f, 0.5f,  0.0f,0.0f,1.0f,   0.0f,0.0f,
+         0.5f,-0.5f, 0.5f,  0.0f,0.0f,1.0f,   1.0f,0.0f,
+         0.5f, 0.5f, 0.5f,  0.0f,0.0f,1.0f,   1.0f,1.0f,
+         0.5f, 0.5f, 0.5f,  0.0f,0.0f,1.0f,   1.0f,1.0f,
+        -0.5f, 0.5f, 0.5f,  0.0f,0.0f,1.0f,   0.0f,1.0f,
+        -0.5f,-0.5f, 0.5f,  0.0f,0.0f,1.0f,   0.0f,0.0f,
 
-        -0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f,  1.0f, 0.0f,
-        -0.5f, 0.5f,-0.5f, -1.0f, 0.0f, 0.0f,  1.0f, 1.0f,
-        -0.5f,-0.5f,-0.5f, -1.0f, 0.0f, 0.0f,  0.0f, 1.0f,
-        -0.5f,-0.5f,-0.5f, -1.0f, 0.0f, 0.0f,  0.0f, 1.0f,
-        -0.5f,-0.5f, 0.5f, -1.0f, 0.0f, 0.0f,  0.0f, 0.0f,
-        -0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f,  1.0f, 0.0f,
+        -0.5f, 0.5f, 0.5f, -1.0f,0.0f,0.0f,   1.0f,0.0f,
+        -0.5f, 0.5f,-0.5f, -1.0f,0.0f,0.0f,   1.0f,1.0f,
+        -0.5f,-0.5f,-0.5f, -1.0f,0.0f,0.0f,   0.0f,1.0f,
+        -0.5f,-0.5f,-0.5f, -1.0f,0.0f,0.0f,   0.0f,1.0f,
+        -0.5f,-0.5f, 0.5f, -1.0f,0.0f,0.0f,   0.0f,0.0f,
+        -0.5f, 0.5f, 0.5f, -1.0f,0.0f,0.0f,   1.0f,0.0f,
 
-         0.5f, 0.5f, 0.5f,  1.0f, 0.0f, 0.0f,  1.0f, 0.0f,
-         0.5f, 0.5f,-0.5f,  1.0f, 0.0f, 0.0f,  1.0f, 1.0f,
-         0.5f,-0.5f,-0.5f,  1.0f, 0.0f, 0.0f,  0.0f, 1.0f,
-         0.5f,-0.5f,-0.5f,  1.0f, 0.0f, 0.0f,  0.0f, 1.0f,
-         0.5f,-0.5f, 0.5f,  1.0f, 0.0f, 0.0f,  0.0f, 0.0f,
-         0.5f, 0.5f, 0.5f,  1.0f, 0.0f, 0.0f,  1.0f, 0.0f,
+         0.5f, 0.5f, 0.5f,  1.0f,0.0f,0.0f,   1.0f,0.0f,
+         0.5f, 0.5f,-0.5f,  1.0f,0.0f,0.0f,   1.0f,1.0f,
+         0.5f,-0.5f,-0.5f,  1.0f,0.0f,0.0f,   0.0f,1.0f,
+         0.5f,-0.5f,-0.5f,  1.0f,0.0f,0.0f,   0.0f,1.0f,
+         0.5f,-0.5f, 0.5f,  1.0f,0.0f,0.0f,   0.0f,0.0f,
+         0.5f, 0.5f, 0.5f,  1.0f,0.0f,0.0f,   1.0f,0.0f,
 
-        -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,  0.0f, 1.0f,
-         0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,  1.0f, 1.0f,
-         0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,  1.0f, 0.0f,
-        -0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,  0.0f, 0.0f,
-        -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,  0.0f, 1.0f,
+        -0.5f,-0.5f,-0.5f,  0.0f,-1.0f,0.0f,  0.0f,1.0f,
+         0.5f,-0.5f,-0.5f,  0.0f,-1.0f,0.0f,  1.0f,1.0f,
+         0.5f,-0.5f, 0.5f,  0.0f,-1.0f,0.0f,  1.0f,0.0f,
+         0.5f,-0.5f, 0.5f,  0.0f,-1.0f,0.0f,  1.0f,0.0f,
+        -0.5f,-0.5f, 0.5f,  0.0f,-1.0f,0.0f,  0.0f,0.0f,
+        -0.5f,-0.5f,-0.5f,  0.0f,-1.0f,0.0f,  0.0f,1.0f,
 
-        -0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,  0.0f, 1.0f,
-         0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,  1.0f, 1.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f,
-        -0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,  0.0f, 0.0f,
-        -0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,  0.0f, 1.0f
+        -0.5f, 0.5f,-0.5f,  0.0f,1.0f,0.0f,   0.0f,1.0f,
+         0.5f, 0.5f,-0.5f,  0.0f,1.0f,0.0f,   1.0f,1.0f,
+         0.5f, 0.5f, 0.5f,  0.0f,1.0f,0.0f,   1.0f,0.0f,
+         0.5f, 0.5f, 0.5f,  0.0f,1.0f,0.0f,   1.0f,0.0f,
+        -0.5f, 0.5f, 0.5f,  0.0f,1.0f,0.0f,   0.0f,0.0f,
+        -0.5f, 0.5f,-0.5f,  0.0f,1.0f,0.0f,   0.0f,1.0f
     };
 
     unsigned int VBO, VAO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
-
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    // Position attribute
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    // Normal attribute
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-    // Texture coordinate attribute
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    // Load existing textures
-    unsigned int texGrass = loadTexture("textures/grass.jpg");
-    unsigned int texRoad = loadTexture("textures/road.jpg");
+    // Load textures
     unsigned int texBuilding = loadTexture("textures/building.jpg");
-    unsigned int texHuman = loadTexture("textures/human.jpg");
+    unsigned int texRoad = loadTexture("textures/road.jpg");
     unsigned int texCar = loadTexture("textures/car.jpg");
     unsigned int texTree = loadTexture("textures/tree.jpg");
-    unsigned int texMetal = loadTexture("textures/metal.jpg");
-
-    // Create skin tone textures programmatically
-    unsigned int texWhiteSkin = createColorTexture(glm::vec3(0.95f, 0.87f, 0.8f));   // Light skin
-    unsigned int texBlackSkin = createColorTexture(glm::vec3(0.4f, 0.28f, 0.2f));    // Dark skin  
-    unsigned int texYellowSkin = createColorTexture(glm::vec3(0.98f, 0.85f, 0.65f)); // Asian skin
+    unsigned int texHumanWhite = loadTexture("textures/human_white.jpg");
+    unsigned int texHumanBlack = loadTexture("textures/human_black.jpg");
+    unsigned int texHumanYellow = loadTexture("textures/human_yellow.jpg");
+    unsigned int texGrass = loadTexture("textures/grass.jpg");
+    unsigned int texLamp = loadTexture("textures/lamp.jpg");
+    unsigned int texTrash = loadTexture("textures/trash.jpg");
 
     ourShader.use();
     ourShader.setInt("texture1", 0);
 
-    // Initialize city
+    // Init city with larger grid
     CityManager cityManager;
-    cityManager.initializeCity();
+    cityManager.generateCity(12, 12.0f); // 更大的网格
+    cityManager.spawnEntities(15, 8, 10, 8); // 更多实体
 
-    // Lighting setup
-    glm::vec3 lightPos = glm::vec3(50.0f, 100.0f, 50.0f);
-    glm::vec3 lightColor = glm::vec3(1.0f, 0.95f, 0.8f);
-
-    std::cout << "Enhanced GTA-Style City with Diverse Humans!" << std::endl;
-    std::cout << "Controls: WASD to move, Mouse to look, Space/Shift for up/down" << std::endl;
-    std::cout << "Features: Walking humans with different skin tones and proper animations" << std::endl;
-
+    // Main loop
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
         processInput(window);
-
-        // Sky gradient background with day/night cycle
-        float timeOfDay = sinf(static_cast<float>(glfwGetTime()) * 0.1f) * 0.5f + 0.5f;
-        glm::vec3 skyColor = glm::mix(
-            glm::vec3(0.1f, 0.1f, 0.2f),  // Night
-            glm::vec3(0.5f, 0.7f, 1.0f),  // Day
-            timeOfDay
-        );
-
-        glClearColor(skyColor.x, skyColor.y, skyColor.z, 1.0f);
+        glClearColor(0.6f, 0.8f, 1.0f, 1.0f); // 更亮的天空色
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         ourShader.use();
-
-        // View/Projection matrices
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), 1920.0f / 1080.0f, 0.1f, 500.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), 1280.0f / 720.0f, 0.1f, 500.0f);
         glm::mat4 view = camera.GetViewMatrix();
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // Lighting uniforms
-        ourShader.setVec3("lightPos", lightPos);
-        ourShader.setVec3("lightColor", lightColor * (0.3f + timeOfDay * 0.7f));
-        ourShader.setVec3("viewPos", camera.Position);
+        // Update entities
+        cityManager.update(deltaTime);
 
-        // Update city
-        cityManager.update();
+        // 先渲染地面
+        glm::mat4 groundModel = glm::mat4(1.0f);
+        groundModel = glm::translate(groundModel, glm::vec3(50.0f, -0.1f, 50.0f));
+        groundModel = glm::scale(groundModel, glm::vec3(200.0f, 0.1f, 200.0f));
+        ourShader.setMat4("model", groundModel);
+        glBindTexture(GL_TEXTURE_2D, texGrass);
+        glBindVertexArray(VAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
 
-        // Render buildings
-        for (const auto& building : cityManager.buildings) {
-            glm::mat4 model = building->worldTransform;
+        // Render roads
+        for (const auto& r : cityManager.getRoads()) {
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(r.x, r.y, r.z));
+
+            if (r.isHorizontal) {
+                // 横向道路
+                model = glm::scale(model, glm::vec3(r.length, 0.15f, r.width));
+            }
+            else {
+                // 纵向道路
+                model = glm::scale(model, glm::vec3(r.width, 0.15f, r.length));
+            }
+
             ourShader.setMat4("model", model);
-            ourShader.setVec3("objectColor", building->color);
-
-            if (building->type == BuildingType::FIELD)
-                glBindTexture(GL_TEXTURE_2D, texGrass);
-            else if (building->type == BuildingType::ROAD)
-                glBindTexture(GL_TEXTURE_2D, texRoad);
-            else
-                glBindTexture(GL_TEXTURE_2D, texBuilding);
-
+            glBindTexture(GL_TEXTURE_2D, texRoad);
             glBindVertexArray(VAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
-        // Render entities with enhanced human rendering
-        for (const auto& entity : cityManager.entities) {
-            renderEntity(entity.get(), ourShader, VAO, texHuman, texCar, texTree,
-                texGrass, texMetal, texWhiteSkin, texBlackSkin, texYellowSkin);
+        // Render buildings
+        for (const auto& b : cityManager.getBuildings()) {
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(b.x, b.height / 2.0f, b.z));
+            model = glm::scale(model, glm::vec3(b.width, b.height, b.depth));
+            ourShader.setMat4("model", model);
+            glBindTexture(GL_TEXTURE_2D, texBuilding);
+            glBindVertexArray(VAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // Render entities
+        for (const auto& entity : cityManager.getEntities()) {
+            if (entity.type == EntityType::HUMAN) {
+                entity.renderHuman(ourShader.ID, VAO, texHumanWhite, texHumanBlack, texHumanYellow);
+            }
+            else {
+                glm::mat4 model = createEntityModelMatrix(entity);
+                ourShader.setMat4("model", model);
+
+                switch (entity.type) {
+                case EntityType::CAR:
+                    glBindTexture(GL_TEXTURE_2D, texCar);
+                    break;
+                case EntityType::TREE:
+                    glBindTexture(GL_TEXTURE_2D, texTree);
+                    break;
+                case EntityType::LAMP_POST:
+                    glBindTexture(GL_TEXTURE_2D, texLamp);
+                    break;
+                case EntityType::TRASH_BIN:
+                    glBindTexture(GL_TEXTURE_2D, texTrash);
+                    break;
+                case EntityType::GRASS_PATCH:
+                    glBindTexture(GL_TEXTURE_2D, texGrass);
+                    break;
+                default:
+                    glBindTexture(GL_TEXTURE_2D, texHumanWhite);
+                    break;
+                }
+
+                glBindVertexArray(VAO);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            }
         }
 
         glfwSwapBuffers(window);
@@ -380,9 +339,6 @@ int main() {
     // Cleanup
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
-    glDeleteTextures(1, &texWhiteSkin);
-    glDeleteTextures(1, &texBlackSkin);
-    glDeleteTextures(1, &texYellowSkin);
 
     glfwTerminate();
     return 0;
