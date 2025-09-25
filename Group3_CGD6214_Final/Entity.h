@@ -1,9 +1,9 @@
 #pragma once
+
 #include "Node.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <vector>
-#include <memory>
 
 enum class EntityType {
     HUMAN,
@@ -26,8 +26,8 @@ struct HumanBodyPart {
     glm::vec3 rotation;
     glm::mat4 transform;
 
-    HumanBodyPart(glm::vec3 pos, glm::vec3 scl)
-        : localPosition(pos), scale(scl), rotation(0.0f), transform(glm::mat4(1.0f)) {
+    HumanBodyPart(const glm::vec3& pos, const glm::vec3& s)
+        : localPosition(pos), scale(s), rotation(0.0f), transform(1.0f) {
     }
 };
 
@@ -48,22 +48,31 @@ public:
     float stepHeight;
     bool isWalking;
 
+    // Constructors and destructor
     Entity();
     Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t);
     ~Entity();
 
+    // Core methods
     void update(const glm::mat4& parentTransform) override;
     void setTarget(const glm::vec3& target);
     void moveRandomly();
-    void updateMovement();
 
     // Human-specific methods
     void initializeHuman(HumanSkinType skin);
+    glm::vec3 getSkinColor(HumanSkinType skin);
     void updateHumanAnimation();
     void updateBodyPartTransforms();
-    glm::vec3 getSkinColor(HumanSkinType skin);
-    // Render methods
     void renderHuman(unsigned int shaderProgram, unsigned int VAO,
         unsigned int whiteTexture, unsigned int blackTexture, unsigned int yellowTexture);
-    void renderBodyPart(const HumanBodyPart& part, unsigned int shaderProgram, unsigned int VAO, unsigned int texture);
+    void renderBodyPart(const HumanBodyPart& part, unsigned int shaderProgram,
+        unsigned int VAO, unsigned int texture);
+
+    // Boundary constraint methods (NEW)
+    bool isWithinCityBounds(const glm::vec3& position);
+    glm::vec3 constrainToCityBounds(const glm::vec3& position);
+
+private:
+    // Movement methods
+    void updateMovement();
 };

@@ -48,7 +48,7 @@ Entity::Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t) 
 
         initializeHuman(skinType);
         color = getSkinColor(skinType);
-        speed = 0.3f + ((rand() % 30) / 100.0f); // Slower walking speed: 0.3-0.6
+        speed = 1.5f + ((rand() % 20) / 100.0f); // Normal walking speed: 1.5-1.7
     }
     else if (type == EntityType::CAR) {
         color = glm::vec3(
@@ -56,7 +56,7 @@ Entity::Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t) 
             (rand() % 100) / 100.0f,
             (rand() % 100) / 100.0f
         );
-        speed = 1.0f + ((rand() % 50) / 100.0f); // Slower car speed: 1.0-1.5
+        speed = 4.0f + ((rand() % 30) / 100.0f); // Normal car speed: 4.0-4.3
     }
     else if (type == EntityType::TREE) {
         color = glm::vec3(0.2f, 0.4f, 0.1f);
@@ -102,6 +102,25 @@ glm::vec3 Entity::getSkinColor(HumanSkinType skin) {
     return glm::vec3(0.95f, 0.87f, 0.8f);
 }
 
+bool Entity::isWithinCityBounds(const glm::vec3& position) {
+    const float cityLimit = 44.0f; // More conservative limit
+    return (fabsf(position.x) <= cityLimit && fabsf(position.z) <= cityLimit);
+}
+
+glm::vec3 Entity::constrainToCityBounds(const glm::vec3& position) {
+    const float cityLimit = 44.0f;
+    glm::vec3 constrainedPos = position;
+
+    if (fabsf(constrainedPos.x) > cityLimit) {
+        constrainedPos.x = (constrainedPos.x > 0) ? cityLimit : -cityLimit;
+    }
+    if (fabsf(constrainedPos.z) > cityLimit) {
+        constrainedPos.z = (constrainedPos.z > 0) ? cityLimit : -cityLimit;
+    }
+
+    return constrainedPos;
+}
+
 void Entity::update(const glm::mat4& parentTransform) {
     animationTime += 0.016f;
 
@@ -113,8 +132,11 @@ void Entity::update(const glm::mat4& parentTransform) {
             updateBodyPartTransforms();
         }
 
-        if (fmod(animationTime, 8.0f + (rand() % 400) / 100.0f) < 0.016f) { // Much longer intervals between moves
-            moveRandomly();
+        // Check if entity needs new target - less frequent for smoother behavior
+        if (fmod(animationTime, 4.0f + (rand() % 200) / 100.0f) < 0.016f) {
+            if (!isMoving || glm::length(velocity) < 0.1f) {
+                moveRandomly();
+            }
         }
     }
 
@@ -122,27 +144,28 @@ void Entity::update(const glm::mat4& parentTransform) {
 }
 
 void Entity::updateHumanAnimation() {
-    if (isMoving) {
-        walkCycle += 1.5f * 0.016f; // Much slower animation for smoother movement
+    if (isMoving && glm::length(velocity) > 0.1f) {
+        walkCycle += 6.0f * 0.016f; // Smooth walking animation
         isWalking = true;
         stepHeight = 0.0f;
 
-        float armSwing = sinf(walkCycle) * 0.2f; // Reduced arm swing
-        float legSwing = sinf(walkCycle) * 0.15f; // Reduced leg swing
+        float armSwing = sinf(walkCycle) * 0.3f; // Natural arm swing
+        float legSwing = sinf(walkCycle) * 0.25f; // Natural leg swing
 
         bodyParts[2].rotation.x = armSwing;
         bodyParts[3].rotation.x = -armSwing;
         bodyParts[4].rotation.x = legSwing;
         bodyParts[5].rotation.x = -legSwing;
 
-        bodyParts[1].localPosition.y = 0.8f + sinf(walkCycle * 2.0f) * 0.01f; // Reduced bounce
-        bodyParts[0].localPosition.y = 1.5f + sinf(walkCycle * 2.0f) * 0.01f;
+        bodyParts[1].localPosition.y = 0.8f + sinf(walkCycle * 2.0f) * 0.02f; // Natural bounce
+        bodyParts[0].localPosition.y = 1.5f + sinf(walkCycle * 2.0f) * 0.02f;
     }
     else {
         isWalking = false;
         walkCycle = 0.0f;
         stepHeight = 0.0f;
 
+        // Reset to neutral pose
         for (auto& part : bodyParts) part.rotation = glm::vec3(0.0f);
 
         bodyParts[0].localPosition.y = 1.5f;
@@ -162,26 +185,40 @@ void Entity::updateBodyPartTransforms() {
 }
 
 void Entity::setTarget(const glm::vec3& target) {
-    targetPosition = target;
+    // Ensure target is within city bounds
+    glm::vec3 constrainedTarget = constrainToCityBounds(target);
+    targetPosition = constrainedTarget;
     isMoving = true;
 
-    glm::vec3 direction = targetPosition - glm::vec3(localTransform[3]);
-    if (glm::length(direction) > 0.1f) velocity = glm::normalize(direction) * speed;
+    glm::vec3 currentPos = glm::vec3(localTransform[3]);
+    glm::vec3 direction = targetPosition - currentPos;
+    if (glm::length(direction) > 0.1f) {
+        velocity = glm::normalize(direction) * speed;
+    }
 }
 
 void Entity::moveRandomly() {
     if (type == EntityType::TREE || type == EntityType::GRASS_PATCH ||
         type == EntityType::LAMP_POST || type == EntityType::TRASH_BIN) return;
 
-    float range = (type == EntityType::CAR) ? 30.0f : 10.0f; // Reduced human range
+    // Appropriate movement range based on entity type
+    float range = (type == EntityType::CAR) ? 30.0f : 15.0f;
     glm::vec3 currentPos = glm::vec3(localTransform[3]);
 
-    // Generate random target within reasonable city bounds
-    glm::vec3 randomTarget(
-        -30.0f + ((rand() % 100) / 100.0f) * 60.0f,  // Random X from -30 to 30
-        -0.9f,  // Keep all entities at ground level
-        -30.0f + ((rand() % 100) / 100.0f) * 60.0f   // Random Z from -30 to 30
+    // Generate random target with more variety
+    glm::vec3 randomOffset(
+        ((rand() % 200) - 100) / 100.0f * range,  // -range to +range
+        0.0f,
+        ((rand() % 200) - 100) / 100.0f * range   // -range to +range
     );
+
+    glm::vec3 randomTarget = currentPos + randomOffset;
+
+    // Set appropriate Y position
+    randomTarget.y = (type == EntityType::HUMAN) ? -0.9f : -0.8f;
+
+    // Ensure the target is within bounds
+    randomTarget = constrainToCityBounds(randomTarget);
 
     setTarget(randomTarget);
 }
@@ -193,37 +230,61 @@ void Entity::updateMovement() {
     glm::vec3 direction = targetPosition - currentPos;
     float distance = glm::length(direction);
 
-    if (distance < 0.5f) {
+    if (distance < 1.0f) { // Reached target
         isMoving = false;
         velocity = glm::vec3(0.0f);
         return;
     }
 
+    // Smooth movement with proper speed scaling
     glm::vec3 movement = glm::normalize(direction) * speed * 0.016f;
-    localTransform = glm::mat4(1.0f);
-    currentPos += movement;
+    glm::vec3 newPos = currentPos + movement;
 
-    if (type == EntityType::HUMAN) {
-        currentPos.y = -0.9f + stepHeight; // Ensure humans stay at ground level
-        if (glm::length(movement) > 0.01f) {
-            float angle = atan2f(movement.x, movement.z);
-            localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
-        }
+    // Check if the new position would be within city bounds
+    if (!isWithinCityBounds(newPos)) {
+        // Stop movement and find a new target within bounds
+        isMoving = false;
+        velocity = glm::vec3(0.0f);
+
+        // Force entity to stay within bounds
+        newPos = constrainToCityBounds(currentPos);
+
+        // Set a new random target that's definitely within bounds
+        moveRandomly();
+        return;
     }
 
-    localTransform = glm::translate(localTransform, currentPos);
+    // Update transform based on entity type
+    localTransform = glm::mat4(1.0f);
 
-    if (type == EntityType::CAR) {
-        currentPos.y = -0.8f; // Ensure cars stay at road level
-        localTransform = glm::translate(glm::mat4(1.0f), currentPos);
+    if (type == EntityType::HUMAN) {
+        newPos.y = -0.9f + stepHeight; // Ensure humans stay at ground level
 
-        glm::vec3 scale = glm::vec3(2.0f, 1.0f, 4.0f);
-        localTransform = glm::scale(localTransform, scale);
-
-        if (glm::length(movement) > 0.01f) {
+        // Handle rotation for humans - smooth turning
+        if (glm::length(movement) > 0.01f && isMoving) {
             float angle = atan2f(movement.x, movement.z);
             localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
         }
+
+        localTransform = glm::translate(localTransform, newPos);
+        glm::vec3 scale = glm::vec3(0.4f, 1.8f, 0.4f);
+        localTransform = glm::scale(localTransform, scale);
+    }
+    else if (type == EntityType::CAR) {
+        newPos.y = -0.8f; // Ensure cars stay at road level
+
+        // Handle rotation for cars - smooth turning
+        if (glm::length(movement) > 0.01f && isMoving) {
+            float angle = atan2f(movement.x, movement.z);
+            localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
+        }
+
+        localTransform = glm::translate(localTransform, newPos);
+        glm::vec3 scale = glm::vec3(2.0f, 1.0f, 4.0f);
+        localTransform = glm::scale(localTransform, scale);
+    }
+    else {
+        localTransform = glm::translate(localTransform, newPos);
     }
 }
 
