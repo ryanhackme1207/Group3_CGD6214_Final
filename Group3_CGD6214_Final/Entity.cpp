@@ -46,7 +46,7 @@ Entity::Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t) 
 
         initializeHuman(skinType);
         color = getSkinColor(skinType);
-        speed = 1.5f + ((rand() % 100) / 100.0f);
+        speed = 0.5f + ((rand() % 100) / 200.0f); // Reduced speed: 0.5-1.0
     }
     else if (type == EntityType::CAR) {
         color = glm::vec3(
@@ -111,7 +111,7 @@ void Entity::update(const glm::mat4& parentTransform) {
             updateBodyPartTransforms();
         }
 
-        if (fmod(animationTime, 3.0f + (rand() % 200) / 100.0f) < 0.016f) {
+        if (fmod(animationTime, 5.0f + (rand() % 300) / 100.0f) < 0.016f) { // Longer intervals between moves
             moveRandomly();
         }
     }
@@ -121,20 +121,20 @@ void Entity::update(const glm::mat4& parentTransform) {
 
 void Entity::updateHumanAnimation() {
     if (isMoving) {
-        walkCycle += 8.0f * 0.016f;
+        walkCycle += 3.0f * 0.016f; // Reduced from 8.0f to 3.0f for slower animation
         isWalking = true;
         stepHeight = 0.0f;
 
-        float armSwing = sin(walkCycle) * 0.3f;
-        float legSwing = sin(walkCycle) * 0.2f;
+        float armSwing = sin(walkCycle) * 0.2f; // Reduced arm swing
+        float legSwing = sin(walkCycle) * 0.15f; // Reduced leg swing
 
         bodyParts[2].rotation.x = armSwing;
         bodyParts[3].rotation.x = -armSwing;
         bodyParts[4].rotation.x = legSwing;
         bodyParts[5].rotation.x = -legSwing;
 
-        bodyParts[1].localPosition.y = 0.8f + sin(walkCycle * 2.0f) * 0.02f;
-        bodyParts[0].localPosition.y = 1.5f + sin(walkCycle * 2.0f) * 0.02f;
+        bodyParts[1].localPosition.y = 0.8f + sin(walkCycle * 2.0f) * 0.01f; // Reduced bounce
+        bodyParts[0].localPosition.y = 1.5f + sin(walkCycle * 2.0f) * 0.01f;
     }
     else {
         isWalking = false;
@@ -171,17 +171,15 @@ void Entity::moveRandomly() {
     if (type == EntityType::TREE || type == EntityType::GRASS_PATCH ||
         type == EntityType::LAMP_POST || type == EntityType::TRASH_BIN) return;
 
-    float range = (type == EntityType::CAR) ? 30.0f : 15.0f;
+    float range = (type == EntityType::CAR) ? 30.0f : 10.0f; // Reduced human range
     glm::vec3 currentPos = glm::vec3(localTransform[3]);
 
+    // Generate truly random target across the entire map
     glm::vec3 randomTarget(
-        currentPos.x + ((rand() % 200 - 100) / 100.0f) * range,
+        -35.0f + ((rand() % 100) / 100.0f) * 70.0f,  // Random X from -35 to 35
         currentPos.y,
-        currentPos.z + ((rand() % 200 - 100) / 100.0f) * range
+        -35.0f + ((rand() % 100) / 100.0f) * 70.0f   // Random Z from -35 to 35
     );
-
-    randomTarget.x = glm::clamp(randomTarget.x, -40.0f, 40.0f);
-    randomTarget.z = glm::clamp(randomTarget.z, -40.0f, 40.0f);
 
     setTarget(randomTarget);
 }
@@ -203,15 +201,15 @@ void Entity::updateMovement() {
     localTransform = glm::mat4(1.0f);
     currentPos += movement;
 
+    localTransform = glm::translate(localTransform, currentPos);
+
     if (type == EntityType::HUMAN) {
         currentPos.y = 0.0f + stepHeight;
-        if (glm::length(glm::vec2(movement.x, movement.z)) > 0.01f) {
+        if (glm::length(movement) > 0.01f) {
             float angle = atan2(movement.x, movement.z);
             localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
         }
     }
-
-    localTransform = glm::translate(localTransform, currentPos);
 
     if (type == EntityType::CAR) {
         glm::vec3 scale = glm::vec3(2.0f, 1.0f, 4.0f);
