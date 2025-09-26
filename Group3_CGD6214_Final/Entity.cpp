@@ -1,4 +1,3 @@
-// Entity.cpp
 #include "Entity.h"
 #include <random>
 #include <cmath>
@@ -13,6 +12,7 @@ Entity::Entity() {
     speed = 2.0f;
     animationTime = 0.0f;
     isMoving = false;
+    visible = true;
     targetPosition = glm::vec3(0.0f);
     localTransform = glm::mat4(1.0f);
     worldTransform = glm::mat4(1.0f);
@@ -29,6 +29,7 @@ Entity::Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t) 
     velocity = glm::vec3(0.0f);
     animationTime = 0.0f;
     isMoving = false;
+    visible = true;
     targetPosition = position;
     walkCycle = 0.0f;
     stepHeight = 0.0f;
@@ -86,19 +87,27 @@ Entity::~Entity() {
 
 void Entity::initializeHuman(HumanSkinType skin) {
     bodyParts.clear();
+    // Head
     bodyParts.push_back(HumanBodyPart(glm::vec3(0.0f, 1.5f, 0.0f), glm::vec3(0.4f, 0.4f, 0.4f)));
+    // Body
     bodyParts.push_back(HumanBodyPart(glm::vec3(0.0f, 0.8f, 0.0f), glm::vec3(0.4f, 0.6f, 0.2f)));
+    // Left arm
     bodyParts.push_back(HumanBodyPart(glm::vec3(-0.3f, 0.9f, 0.0f), glm::vec3(0.15f, 0.5f, 0.15f)));
+    // Right arm
     bodyParts.push_back(HumanBodyPart(glm::vec3(0.3f, 0.9f, 0.0f), glm::vec3(0.15f, 0.5f, 0.15f)));
+    // Left leg
     bodyParts.push_back(HumanBodyPart(glm::vec3(-0.1f, 0.25f, 0.0f), glm::vec3(0.15f, 0.5f, 0.15f)));
+    // Right leg
     bodyParts.push_back(HumanBodyPart(glm::vec3(0.1f, 0.25f, 0.0f), glm::vec3(0.15f, 0.5f, 0.15f)));
 }
 
 glm::vec3 Entity::getSkinColor(HumanSkinType skin) {
-    if (skin == HumanSkinType::WHITE) return glm::vec3(0.95f, 0.87f, 0.8f);
-    if (skin == HumanSkinType::BLACK) return glm::vec3(0.4f, 0.28f, 0.2f);
-    if (skin == HumanSkinType::YELLOW) return glm::vec3(0.98f, 0.85f, 0.65f);
-    return glm::vec3(0.95f, 0.87f, 0.8f);
+    switch (skin) {
+    case HumanSkinType::WHITE: return glm::vec3(0.95f, 0.87f, 0.8f);
+    case HumanSkinType::BLACK: return glm::vec3(0.4f, 0.28f, 0.2f);
+    case HumanSkinType::YELLOW: return glm::vec3(0.98f, 0.85f, 0.65f);
+    default: return glm::vec3(0.95f, 0.87f, 0.8f);
+    }
 }
 
 void Entity::update(const glm::mat4& parentTransform) {
@@ -112,6 +121,7 @@ void Entity::update(const glm::mat4& parentTransform) {
             updateBodyPartTransforms();
         }
 
+        // Random movement trigger
         if (fmod(animationTime, 8.0f + (rand() % 400) / 100.0f) < 0.016f) {
             moveRandomly();
         }
@@ -129,22 +139,31 @@ void Entity::updateHumanAnimation() {
         float armSwing = sinf(walkCycle) * 0.2f;
         float legSwing = sinf(walkCycle) * 0.15f;
 
-        bodyParts[2].rotation.x = armSwing;
-        bodyParts[3].rotation.x = -armSwing;
-        bodyParts[4].rotation.x = legSwing;
-        bodyParts[5].rotation.x = -legSwing;
+        // Animate arms and legs
+        if (bodyParts.size() >= 6) {
+            bodyParts[2].rotation.x = armSwing;   // Left arm
+            bodyParts[3].rotation.x = -armSwing;  // Right arm
+            bodyParts[4].rotation.x = legSwing;   // Left leg
+            bodyParts[5].rotation.x = -legSwing;  // Right leg
 
-        bodyParts[1].localPosition.y = 0.8f + sinf(walkCycle * 2.0f) * 0.01f;
-        bodyParts[0].localPosition.y = 1.5f + sinf(walkCycle * 2.0f) * 0.01f;
+            // Body bob
+            bodyParts[1].localPosition.y = 0.8f + sinf(walkCycle * 2.0f) * 0.01f;
+            bodyParts[0].localPosition.y = 1.5f + sinf(walkCycle * 2.0f) * 0.01f;
+        }
     }
     else {
         isWalking = false;
         walkCycle = 0.0f;
         stepHeight = 0.0f;
 
-        for (auto& part : bodyParts) part.rotation = glm::vec3(0.0f);
-        bodyParts[0].localPosition.y = 1.5f;
-        bodyParts[1].localPosition.y = 0.8f;
+        // Reset animations
+        for (auto& part : bodyParts) {
+            part.rotation = glm::vec3(0.0f);
+        }
+        if (bodyParts.size() >= 2) {
+            bodyParts[0].localPosition.y = 1.5f;
+            bodyParts[1].localPosition.y = 0.8f;
+        }
     }
 }
 
@@ -162,22 +181,33 @@ void Entity::updateBodyPartTransforms() {
 void Entity::setTarget(const glm::vec3& target) {
     targetPosition = target;
     isMoving = true;
-    glm::vec3 direction = targetPosition - glm::vec3(localTransform[3]);
-    if (glm::length(direction) > 0.1f) velocity = glm::normalize(direction) * speed;
+    glm::vec3 currentPos = glm::vec3(localTransform[3]);
+    glm::vec3 direction = targetPosition - currentPos;
+    if (glm::length(direction) > 0.1f) {
+        velocity = glm::normalize(direction) * speed;
+    }
 }
 
 void Entity::moveRandomly() {
+    // Don't move static objects
     if (type == EntityType::TREE || type == EntityType::GRASS_PATCH ||
-        type == EntityType::LAMP_POST || type == EntityType::TRASH_BIN) return;
+        type == EntityType::LAMP_POST || type == EntityType::TRASH_BIN) {
+        return;
+    }
 
     float range = (type == EntityType::CAR) ? 30.0f : 10.0f;
     glm::vec3 currentPos = glm::vec3(localTransform[3]);
 
     glm::vec3 randomTarget(
-        -30.0f + ((rand() % 100) / 100.0f) * 60.0f,
-        -0.9f,
-        -30.0f + ((rand() % 100) / 100.0f) * 60.0f
+        currentPos.x + (-range + ((rand() % 100) / 100.0f) * 2.0f * range),
+        currentPos.y,
+        currentPos.z + (-range + ((rand() % 100) / 100.0f) * 2.0f * range)
     );
+
+    // Keep within bounds
+    randomTarget.x = glm::clamp(randomTarget.x, -40.0f, 40.0f);
+    randomTarget.z = glm::clamp(randomTarget.z, -40.0f, 40.0f);
+    randomTarget.y = (type == EntityType::HUMAN) ? -0.9f : -0.8f;
 
     setTarget(randomTarget);
 }
@@ -196,44 +226,62 @@ void Entity::updateMovement() {
     }
 
     glm::vec3 movement = glm::normalize(direction) * speed * 0.016f;
-    localTransform = glm::mat4(1.0f);
     currentPos += movement;
+
+    // Update transform based on entity type
+    localTransform = glm::mat4(1.0f);
 
     if (type == EntityType::HUMAN) {
         currentPos.y = -0.9f + stepHeight;
-        if (glm::length(movement) > 0.01f) {
+
+        // Rotate to face movement direction
+        if (glm::length(glm::vec2(movement.x, movement.z)) > 0.01f) {
             float angle = atan2f(movement.x, movement.z);
             localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
         }
+
+        localTransform = glm::translate(localTransform, currentPos);
+        localTransform = glm::scale(localTransform, glm::vec3(0.4f, 1.8f, 0.3f));
     }
-
-    localTransform = glm::translate(localTransform, currentPos);
-
-    if (type == EntityType::CAR) {
+    else if (type == EntityType::CAR) {
         currentPos.y = -0.8f;
-        localTransform = glm::translate(glm::mat4(1.0f), currentPos);
-        glm::vec3 scale = glm::vec3(2.0f, 1.0f, 4.0f);
-        localTransform = glm::scale(localTransform, scale);
 
-        if (glm::length(movement) > 0.01f) {
+        // Rotate to face movement direction
+        if (glm::length(glm::vec2(movement.x, movement.z)) > 0.01f) {
             float angle = atan2f(movement.x, movement.z);
             localTransform = glm::rotate(localTransform, angle, glm::vec3(0, 1, 0));
         }
+
+        localTransform = glm::translate(localTransform, currentPos);
+        localTransform = glm::scale(localTransform, glm::vec3(1.5f, 0.8f, 3.0f));
+    }
+    else {
+        localTransform = glm::translate(localTransform, currentPos);
     }
 }
 
-// Fixed renderHuman method (removed duplicate and fixed syntax)
 void Entity::renderHuman(unsigned int shaderProgram, unsigned int VAO,
     unsigned int whiteTexture, unsigned int blackTexture, unsigned int yellowTexture) const {
 
-    if (type != EntityType::HUMAN) return;
+    if (type != EntityType::HUMAN) {
+        // For non-humans, just render as simple object
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(worldTransform));
+        glUniform3fv(glGetUniformLocation(shaderProgram, "objectColor"), 1, glm::value_ptr(color));
+        glBindVertexArray(VAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        return;
+    }
 
+    // Select appropriate skin texture
     unsigned int skinTexture;
-    if (skinType == HumanSkinType::WHITE) skinTexture = whiteTexture;
-    else if (skinType == HumanSkinType::BLACK) skinTexture = blackTexture;
-    else if (skinType == HumanSkinType::YELLOW) skinTexture = yellowTexture;
-    else skinTexture = whiteTexture;
+    switch (skinType) {
+    case HumanSkinType::WHITE: skinTexture = whiteTexture; break;
+    case HumanSkinType::BLACK: skinTexture = blackTexture; break;
+    case HumanSkinType::YELLOW: skinTexture = yellowTexture; break;
+    default: skinTexture = whiteTexture; break;
+    }
 
+    // Render each body part
     for (const auto& part : bodyParts) {
         renderBodyPart(part, shaderProgram, VAO, skinTexture);
     }
@@ -245,7 +293,13 @@ void Entity::renderBodyPart(const HumanBodyPart& part, unsigned int shaderProgra
     glm::mat4 partModel = worldTransform * part.transform;
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(partModel));
     glUniform3fv(glGetUniformLocation(shaderProgram, "objectColor"), 1, glm::value_ptr(color));
-    glBindTexture(GL_TEXTURE_2D, texture);
+
+    // Bind texture if provided
+    if (texture != 0) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+    }
+
     glBindVertexArray(VAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 }

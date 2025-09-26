@@ -27,16 +27,22 @@
     <ClCompile Include="shader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="camera.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Node.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Building.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CityManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LightingSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MaterialSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AdvancedCamera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Node.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Entity.cpp">
@@ -45,9 +51,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="shader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="camera.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Building.h">
@@ -62,36 +65,43 @@
     <ClInclude Include="CityManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="LightingSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MaterialSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AdvancedCamera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Entity.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\fragmentShader.fs">
+    <None Include="shaders\advancedFragment.fs">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\vertexShader.vs">
+    <None Include="shaders\advancedVertex.vs">
       <Filter>shaders</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="textures\grass.jpg">
-      <Filter>Textures</Filter>
-    </Image>
-    <Image Include="textures\building.jpg">
-      <Filter>Textures</Filter>
-    </Image>
-    <Image Include="textures\road.jpg">
-      <Filter>Textures</Filter>
-    </Image>
-    <Image Include="textures\metal.jpg">
-      <Filter>Textures</Filter>
-    </Image>
-    <Image Include="textures\car.jpg">
-      <Filter>Textures</Filter>
-    </Image>
-    <Image Include="textures\tree.jpg">
-      <Filter>Textures</Filter>
-    </Image>
+    <None Include="shaders\postProcess.fs">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\postProcess.vs">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\shadowMap.fs">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\shadowMap.vs">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\skybox.fs">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\skybox.vs">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

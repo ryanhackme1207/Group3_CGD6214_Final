@@ -1,15 +1,24 @@
-// Entity.h
 #pragma once
-#include "Node.h"
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <vector>
+#include "Node.h"
 
 enum class EntityType {
-    HUMAN, CAR, TREE, GRASS_PATCH, LAMP_POST, TRASH_BIN
+    TREE = 0,
+    CAR = 1,
+    HUMAN = 2,
+    STREET_LIGHT = 3,
+    BENCH = 4,
+    LAMP_POST = 5,
+    TRASH_BIN = 6,
+    GRASS_PATCH = 7
 };
 
 enum class HumanSkinType {
-    WHITE, BLACK, YELLOW
+    WHITE = 0,
+    BLACK = 1,
+    YELLOW = 2
 };
 
 struct HumanBodyPart {
@@ -18,13 +27,29 @@ struct HumanBodyPart {
     glm::vec3 rotation;
     glm::mat4 transform;
 
-    HumanBodyPart(const glm::vec3& pos, const glm::vec3& scl)
-        : localPosition(pos), scale(scl), rotation(0.0f), transform(1.0f) {
+    HumanBodyPart(glm::vec3 pos, glm::vec3 sc)
+        : localPosition(pos), scale(sc), rotation(0.0f), transform(1.0f) {
     }
 };
 
 class Entity : public Node {
 public:
+    EntityType type;
+    glm::vec3 color;
+    glm::vec3 velocity;
+    glm::vec3 targetPosition;
+    float speed;
+    float animationTime;
+    bool isMoving;
+    bool visible;
+
+    // Human-specific
+    HumanSkinType skinType;
+    std::vector<HumanBodyPart> bodyParts;
+    float walkCycle;
+    float stepHeight;
+    bool isWalking;
+
     Entity();
     Entity(const glm::vec3& position, const glm::vec3& scale, EntityType t);
     ~Entity();
@@ -33,31 +58,16 @@ public:
     void setTarget(const glm::vec3& target);
     void moveRandomly();
 
+    // Human rendering
     void renderHuman(unsigned int shaderProgram, unsigned int VAO,
-        unsigned int whiteTexture, unsigned int blackTexture,
-        unsigned int yellowTexture) const; // Add const here
-
-    EntityType type;
-    glm::vec3 color;
-    glm::vec3 velocity;
-    float speed;
-    float animationTime;
-    bool isMoving;
-    glm::vec3 targetPosition;
-
-    // Human-specific members
-    HumanSkinType skinType;
-    std::vector<HumanBodyPart> bodyParts;
-    float walkCycle;
-    float stepHeight;
-    bool isWalking;
+        unsigned int whiteTexture, unsigned int blackTexture, unsigned int yellowTexture) const;
+    void renderBodyPart(const HumanBodyPart& part, unsigned int shaderProgram,
+        unsigned int VAO, unsigned int texture) const;
 
 private:
     void initializeHuman(HumanSkinType skin);
     glm::vec3 getSkinColor(HumanSkinType skin);
+    void updateMovement();
     void updateHumanAnimation();
     void updateBodyPartTransforms();
-    void updateMovement();
-    void renderBodyPart(const HumanBodyPart& part, unsigned int shaderProgram,
-        unsigned int VAO, unsigned int texture) const; // Add const here
 };
