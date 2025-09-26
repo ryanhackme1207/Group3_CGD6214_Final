@@ -11,14 +11,35 @@ in vec3 TangentFragPos;
 
 // Material properties
 struct Material {
-    sampler2D diffuse;
-    sampler2D specular;
-    sampler2D normal;
-    sampler2D emission;
+    sampler2D diffuseMap;
+    sampler2D specularMap;
+    sampler2D normalMap;
+    sampler2D emissionMap;
+
+    // PBR properties
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ao;
+    vec3 emission;
+    float emissionStrength;
+
+    // Phong properties
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
     float shininess;
     float reflectivity;
+    float transparency;
+
+    // Texture flags
+    bool hasDiffuseMap;
+    bool hasSpecularMap;
     bool hasNormalMap;
     bool hasEmissionMap;
+
+    // Animation
+    vec2 textureOffset;
 };
 
 // Light structure
@@ -58,10 +79,31 @@ float ShadowCalculation(vec4 fragPosLightSpace);
 vec3 getNormalFromMap();
 
 void main() {
-    // Sample material textures
-    vec3 diffuseColor = texture(material.diffuse, TexCoord).rgb;
-    vec3 specularColor = texture(material.specular, TexCoord).rgb;
-    
+    // Sample material textures or use material properties
+    vec2 texCoord = TexCoord + material.textureOffset;
+
+    vec3 diffuseColor;
+    vec3 specularColor;
+
+    // Use texture if available, otherwise use material color
+    if (material.hasDiffuseMap) {
+        diffuseColor = texture(material.diffuseMap, texCoord).rgb;
+    } else {
+        // Use material diffuse color, fallback to albedo if diffuse is black
+        diffuseColor = length(material.diffuse) > 0.0 ? material.diffuse : material.albedo;
+    }
+
+    if (material.hasSpecularMap) {
+        specularColor = texture(material.specularMap, texCoord).rgb;
+    } else {
+        specularColor = material.specular;
+    }
+
+    // Ensure we have some color
+    if (length(diffuseColor) == 0.0) {
+        diffuseColor = vec3(0.7, 0.7, 0.7); // Default gray
+    }
+
     // Get normal (either from normal map or vertex normal)
     vec3 norm;
     if (material.hasNormalMap) {
@@ -69,7 +111,7 @@ void main() {
     } else {
         norm = normalize(Normal);
     }
-    
+
     vec3 viewDir = normalize(viewPos - FragPos);
     vec3 result = globalAmbient * diffuseColor;
     
@@ -89,8 +131,10 @@ void main() {
     
     // Add emission if available
     if (material.hasEmissionMap) {
-        vec3 emission = texture(material.emission, TexCoord).rgb;
+        vec3 emission = texture(material.emissionMap, texCoord).rgb * material.emissionStrength;
         result += emission;
+    } else if (length(material.emission) > 0.0) {
+        result += material.emission * material.emissionStrength;
     }
     
     // Add reflections if enabled
@@ -210,7 +254,8 @@ float ShadowCalculation(vec4 fragPosLightSpace) {
 
 // Normal mapping
 vec3 getNormalFromMap() {
-    vec3 tangentNormal = texture(material.normal, TexCoord).xyz * 2.0 - 1.0;
+    vec2 texCoord = TexCoord + material.textureOffset;
+    vec3 tangentNormal = texture(material.normalMap, texCoord).xyz * 2.0 - 1.0;
     
     vec3 Q1 = dFdx(FragPos);
     vec3 Q2 = dFdy(FragPos);

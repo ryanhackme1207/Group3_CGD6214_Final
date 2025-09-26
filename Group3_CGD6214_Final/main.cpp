@@ -110,8 +110,8 @@ int main() {
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
 
-    // Initialize systems
-    camera = std::make_unique<AdvancedCamera>(glm::vec3(0.0f, 25.0f, 50.0f));
+    // Initialize systems - position camera closer and lower
+    camera = std::make_unique<AdvancedCamera>(glm::vec3(0.0f, 10.0f, 20.0f));
     camera->SetMode(CameraMode::FREE_FLY);
     camera->SetSmoothMovement(true, 8.0f);
 
@@ -139,8 +139,16 @@ int main() {
     }
     lightingSystem->addStreetLights(streetLightPositions);
 
-    // Create procedural skybox
-    unsigned int cubemapTexture = createProceduralSkybox();
+    // Create skybox from texture files
+    std::vector<std::string> skyboxFaces = {
+        "textures/skybox/px.jpg",  // right
+        "textures/skybox/nx.jpg",  // left
+        "textures/skybox/py.jpg",  // top
+        "textures/skybox/ny.jpg",  // bottom
+        "textures/skybox/pz.jpg",  // front
+        "textures/skybox/nz.jpg"   // back
+    };
+    unsigned int cubemapTexture = loadCubemap(skyboxFaces);
 
     // Cube vertices for basic geometry
     float vertices[] = {
@@ -260,6 +268,8 @@ int main() {
 
     // Create materials
     Material* concreteMaterial = materialManager->createConcreteMaterial("concrete");
+    concreteMaterial->loadDiffuseMap("textures/concrete_diffuse.jpg");
+
     Material* metalMaterial = materialManager->createMetalMaterial("metal", glm::vec3(0.7f, 0.7f, 0.8f));
     Material* glassMaterial = materialManager->createGlassMaterial("glass", glm::vec3(0.8f, 0.9f, 1.0f));
     Material* vegetationMaterial = materialManager->createVegetationMaterial("vegetation");
@@ -271,6 +281,12 @@ int main() {
     std::cout << "  Hierarchy Levels: " << sceneStats.hierarchyLevels << std::endl;
     std::cout << "  Materials: " << materialManager->getMaterialCount() << std::endl;
     std::cout << "  Lights: " << lightingSystem->getLights().size() << std::endl;
+    std::cout << "  Buildings: " << cityManager->getVisibleBuildings().size() << std::endl;
+    std::cout << "  Roads: " << cityManager->getRoads().size() << std::endl;
+    std::cout << "  Entities: " << cityManager->getVisibleEntities().size() << std::endl;
+
+    // Check if textures loaded
+    std::cout << "Concrete texture loaded: " << (concreteMaterial->hasDiffuseMap() ? "YES" : "NO") << std::endl;
 
     // Main render loop
     while (!glfwWindowShouldClose(window)) {
@@ -285,7 +301,7 @@ int main() {
         lightingSystem->update(deltaTime);
         cityManager->update(glm::mat4(1.0f));
         cityManager->optimizeScene(camera->GetPosition(),
-            camera->GetProjectionMatrix(ASPECT_RATIO) * camera->GetViewMatrix());
+            camera->GetProjectionMatrix(ASPECT_RATIO)* camera->GetViewMatrix());
 
         // Render to screen
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -427,12 +443,24 @@ void renderScene(unsigned int shaderProgram, bool shadowPass) {
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
         glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(camera->GetPosition()));
 
+        // Set up light space matrix for shadow mapping
+        glm::vec3 sunDirection = lightingSystem->getSunDirection();
+        glm::mat4 lightProjection = glm::ortho(-50.0f, 50.0f, -50.0f, 50.0f, 1.0f, 100.0f);
+        glm::mat4 lightView = glm::lookAt(-sunDirection * 50.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "lightSpaceMatrix"), 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
+
+        // Set global ambient light
+        glUniform3fv(glGetUniformLocation(shaderProgram, "globalAmbient"), 1, glm::value_ptr(glm::vec3(0.1f, 0.1f, 0.15f)));
+
         lightingSystem->setupLightsForShader(shaderProgram);
 
         if (enableShadows) {
             glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D, lightingSystem->getShadowMap());
+            glUniform1i(glGetUniformLocation(shaderProgram, "shadowMap"), 1);
         }
+        glUniform1i(glGetUniformLocation(shaderProgram, "enableShadows"), enableShadows ? 1 : 0);
     }
 
     // Render ground plane
