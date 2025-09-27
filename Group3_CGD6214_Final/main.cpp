@@ -922,24 +922,24 @@ int main()
                 // Create downtown/business district near center
                 if (abs(x) <= 40 && abs(z) <= 40 && (rand() % 100) < 30) {  // 30% chance for office buildings in center
                     // Office building dimensions
-                    float width = 15.0f + (rand() % 4) * 5.0f;      // 15-30m wide
-                    float depth = 15.0f + (rand() % 4) * 5.0f;      // 15-30m deep  
-                    float height = 40.0f + (rand() % 8) * 15.0f;    // 40-145m tall (10-35+ stories)
+                    float ob_width = 15.0f + (rand() % 4) * 5.0f;      // 15-30m wide
+                    float ob_depth = 15.0f + (rand() % 4) * 5.0f;      // 15-30m deep  
+                    float ob_height = 40.0f + (rand() % 8) * 15.0f;    // 40-145m tall (10-35+ stories)
 
                     // Very tall skyscrapers (rare)
                     if ((rand() % 100) < 5) {  // 5% chance for super tall
-                        height = 150.0f + (rand() % 6) * 25.0f;     // 150-275m tall
-                        width = 20.0f + (rand() % 3) * 8.0f;        // Wider base for stability
-                        depth = 20.0f + (rand() % 3) * 8.0f;
+                        ob_height = 150.0f + (rand() % 6) * 25.0f;     // 150-275m tall
+                        ob_width = 20.0f + (rand() % 3) * 8.0f;        // Wider base for stability
+                        ob_depth = 20.0f + (rand() % 3) * 8.0f;
                     }
 
-                    int colorIndex = rand() % 8;
+                    int ob_colorIndex = rand() % 8;
 
                     // Add some random variation in position
-                    float xOffset = ((rand() % 100) / 100.0f - 0.5f) * 6.0f;
-                    float zOffset = ((rand() % 100) / 100.0f - 0.5f) * 6.0f;
-                    float actualX = x + xOffset;
-                    float actualZ = z + zOffset;
+                    float ob_xOffset = ((rand() % 100) / 100.0f - 0.5f) * 6.0f;
+                    float ob_zOffset = ((rand() % 100) / 100.0f - 0.5f) * 6.0f;
+                    float ob_actualX = x + ob_xOffset;
+                    float ob_actualZ = z + ob_zOffset;
 
                     // Office building colors (more modern/glass-like)
                     glm::vec3 officeColors[] = {
@@ -953,57 +953,63 @@ int main()
                         glm::vec3(0.5f, 0.6f, 0.7f)    // Steel blue
                     };
 
+                    // Clamp office building footprint so it doesn't overflow the lot or cover nearby roads/lamps
+                    const float lotMax = 16.0f; // maximum width/depth to avoid overlapping
+                    ob_width = glm::min(ob_width, lotMax);
+                    ob_depth = glm::min(ob_depth, lotMax);
+
+                    float ob_halfW = ob_width * 0.5f;
+                    float ob_halfD = ob_depth * 0.5f;
+                    float lotHalf = 10.0f;
+                    float padding = 2.0f;
+                    float limit = lotHalf - padding;
+                    ob_actualX = glm::clamp(ob_actualX, x - limit + ob_halfW, x + limit - ob_halfW);
+                    ob_actualZ = glm::clamp(ob_actualZ, z - limit + ob_halfD, z + limit - ob_halfD);
+
                     // Render main office building
                     model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(actualX, height / 2.0f, actualZ));
-                    model = glm::scale(model, glm::vec3(width, height, depth));
+                    model = glm::translate(model, glm::vec3(ob_actualX, ob_height / 2.0f, ob_actualZ));
+                    model = glm::scale(model, glm::vec3(ob_width, ob_height, ob_depth));
                     buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", officeColors[colorIndex]);
+                    buildingShader.SetVec3("objectColor", officeColors[ob_colorIndex]);
 
                     glDrawArrays(GL_TRIANGLES, 0, 36);
 
                     // Add antenna/spire to some tall buildings
-                    if (height > 80.0f && (rand() % 3) == 0) {  // 33% chance for tall buildings
-                        float spireHeight = 8.0f + (rand() % 3) * 4.0f;  // 8-16m spire
-
+                    if (ob_height > 80.0f && (rand() % 3) == 0) {
+                        float spireHeight = 8.0f + (rand() % 3) * 4.0f;
                         model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(actualX, height + spireHeight / 2.0f, actualZ));
+                        model = glm::translate(model, glm::vec3(ob_actualX, ob_height + spireHeight / 2.0f, ob_actualZ));
                         model = glm::scale(model, glm::vec3(1.0f, spireHeight, 1.0f));
                         buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.8f, 0.8f, 0.9f));  // Metallic
-
+                        buildingShader.SetVec3("objectColor", glm::vec3(0.8f, 0.8f, 0.9f));
                         glDrawArrays(GL_TRIANGLES, 0, 36);
                     }
 
                     // Add architectural details for very tall buildings
-                    if (height > 120.0f) {
-                        // Add setback upper section (common in skyscrapers)
-                        float upperWidth = width * 0.7f;
-                        float upperDepth = depth * 0.7f;
-                        float upperHeight = height * 0.25f;
-
+                    if (ob_height > 120.0f) {
+                        float upperWidth = ob_width * 0.7f;
+                        float upperDepth = ob_depth * 0.7f;
+                        float upperHeight = ob_height * 0.25f;
                         model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(actualX, height + upperHeight / 2.0f, actualZ));
+                        model = glm::translate(model, glm::vec3(ob_actualX, ob_height + upperHeight / 2.0f, ob_actualZ));
                         model = glm::scale(model, glm::vec3(upperWidth, upperHeight, upperDepth));
                         buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", officeColors[colorIndex] * 0.9f);  // Slightly darker
-
+                        buildingShader.SetVec3("objectColor", officeColors[ob_colorIndex] * 0.9f);
                         glDrawArrays(GL_TRIANGLES, 0, 36);
 
-                        // Crown/top section
                         if ((rand() % 2) == 0) {
                             float crownHeight = 5.0f;
                             model = glm::mat4(1.0f);
-                            model = glm::translate(model, glm::vec3(actualX, height + upperHeight + crownHeight / 2.0f, actualZ));
+                            model = glm::translate(model, glm::vec3(ob_actualX, ob_height + upperHeight + crownHeight / 2.0f, ob_actualZ));
                             model = glm::scale(model, glm::vec3(upperWidth + 2.0f, crownHeight, upperDepth + 2.0f));
                             buildingShader.SetMat4("model", model);
-                            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.6f));  // Golden crown
-
+                            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.6f));
                             glDrawArrays(GL_TRIANGLES, 0, 36);
                         }
                     }
 
-                    continue;  // Skip residential building generation for this spot
+                    continue; // skip residential for this spot
                 }
 
                 // Determine building type based on position and random factors
@@ -1050,6 +1056,21 @@ int main()
                 float zOffset = ((rand() % 100) / 100.0f - 0.5f) * 4.0f;
                 float actualX = x + xOffset;
                 float actualZ = z + zOffset;
+
+                // Clamp residential footprints so they fit within a lot and don't overlap nearby infrastructure
+                const float residentialMaxW = 12.0f;
+                const float residentialMaxD = 14.0f;
+                width = glm::min(width, residentialMaxW);
+                depth = glm::min(depth, residentialMaxD);
+
+                // Ensure building remains within lot boundaries (keep some padding from road/lights)
+                float halfW = width * 0.5f;
+                float halfD = depth * 0.5f;
+                float lotHalfRes = 10.0f; // half spacing between grid centers
+                float paddingRes = 2.0f;
+                float limitRes = lotHalfRes - paddingRes;
+                actualX = glm::clamp(actualX, x - limitRes + halfW, x + limitRes - halfW);
+                actualZ = glm::clamp(actualZ, z - limitRes + halfD, z + limitRes - halfD);
 
                 // Render main building
                 model = glm::mat4(1.0f);
