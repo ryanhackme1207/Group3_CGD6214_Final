@@ -918,100 +918,6 @@ int main()
                     continue;
                 }
 
-                // === ADD OFFICE BUILDINGS IN CITY CENTER ===
-                // Create downtown/business district near center
-                if (abs(x) <= 40 && abs(z) <= 40 && (rand() % 100) < 30) {  // 30% chance for office buildings in center
-                    // Office building dimensions
-                    float ob_width = 15.0f + (rand() % 4) * 5.0f;      // 15-30m wide
-                    float ob_depth = 15.0f + (rand() % 4) * 5.0f;      // 15-30m deep  
-                    float ob_height = 40.0f + (rand() % 8) * 15.0f;    // 40-145m tall (10-35+ stories)
-
-                    // Very tall skyscrapers (rare)
-                    if ((rand() % 100) < 5) {  // 5% chance for super tall
-                        ob_height = 150.0f + (rand() % 6) * 25.0f;     // 150-275m tall
-                        ob_width = 20.0f + (rand() % 3) * 8.0f;        // Wider base for stability
-                        ob_depth = 20.0f + (rand() % 3) * 8.0f;
-                    }
-
-                    int ob_colorIndex = rand() % 8;
-
-                    // Add some random variation in position
-                    float ob_xOffset = ((rand() % 100) / 100.0f - 0.5f) * 6.0f;
-                    float ob_zOffset = ((rand() % 100) / 100.0f - 0.5f) * 6.0f;
-                    float ob_actualX = x + ob_xOffset;
-                    float ob_actualZ = z + ob_zOffset;
-
-                    // Office building colors (more modern/glass-like)
-                    glm::vec3 officeColors[] = {
-                        glm::vec3(0.7f, 0.8f, 0.9f),   // Light blue glass
-                        glm::vec3(0.6f, 0.7f, 0.7f),   // Green-tinted glass
-                        glm::vec3(0.8f, 0.8f, 0.8f),   // Silver/white
-                        glm::vec3(0.5f, 0.5f, 0.6f),   // Dark glass
-                        glm::vec3(0.7f, 0.7f, 0.8f),   // Blue-gray
-                        glm::vec3(0.6f, 0.6f, 0.6f),   // Medium gray
-                        glm::vec3(0.8f, 0.7f, 0.6f),   // Gold/bronze glass
-                        glm::vec3(0.5f, 0.6f, 0.7f)    // Steel blue
-                    };
-
-                    // Clamp office building footprint so it doesn't overflow the lot or cover nearby roads/lamps
-                    const float lotMax = 16.0f; // maximum width/depth to avoid overlapping
-                    ob_width = glm::min(ob_width, lotMax);
-                    ob_depth = glm::min(ob_depth, lotMax);
-
-                    float ob_halfW = ob_width * 0.5f;
-                    float ob_halfD = ob_depth * 0.5f;
-                    float lotHalf = 10.0f;
-                    float padding = 2.0f;
-                    float limit = lotHalf - padding;
-                    ob_actualX = glm::clamp(ob_actualX, x - limit + ob_halfW, x + limit - ob_halfW);
-                    ob_actualZ = glm::clamp(ob_actualZ, z - limit + ob_halfD, z + limit - ob_halfD);
-
-                    // Render main office building
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(ob_actualX, ob_height / 2.0f, ob_actualZ));
-                    model = glm::scale(model, glm::vec3(ob_width, ob_height, ob_depth));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", officeColors[ob_colorIndex]);
-
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    // Add antenna/spire to some tall buildings
-                    if (ob_height > 80.0f && (rand() % 3) == 0) {
-                        float spireHeight = 8.0f + (rand() % 3) * 4.0f;
-                        model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(ob_actualX, ob_height + spireHeight / 2.0f, ob_actualZ));
-                        model = glm::scale(model, glm::vec3(1.0f, spireHeight, 1.0f));
-                        buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.8f, 0.8f, 0.9f));
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-                    }
-
-                    // Add architectural details for very tall buildings
-                    if (ob_height > 120.0f) {
-                        float upperWidth = ob_width * 0.7f;
-                        float upperDepth = ob_depth * 0.7f;
-                        float upperHeight = ob_height * 0.25f;
-                        model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(ob_actualX, ob_height + upperHeight / 2.0f, ob_actualZ));
-                        model = glm::scale(model, glm::vec3(upperWidth, upperHeight, upperDepth));
-                        buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", officeColors[ob_colorIndex] * 0.9f);
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                        if ((rand() % 2) == 0) {
-                            float crownHeight = 5.0f;
-                            model = glm::mat4(1.0f);
-                            model = glm::translate(model, glm::vec3(ob_actualX, ob_height + upperHeight + crownHeight / 2.0f, ob_actualZ));
-                            model = glm::scale(model, glm::vec3(upperWidth + 2.0f, crownHeight, upperDepth + 2.0f));
-                            buildingShader.SetMat4("model", model);
-                            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.6f));
-                            glDrawArrays(GL_TRIANGLES, 0, 36);
-                        }
-                    }
-
-                    continue; // skip residential for this spot
-                }
-
                 // Determine building type based on position and random factors
                 int buildingType = rand() % 100;
                 int colorIndex = rand() % 8;
@@ -1067,10 +973,58 @@ int main()
                 float halfW = width * 0.5f;
                 float halfD = depth * 0.5f;
                 float lotHalfRes = 10.0f; // half spacing between grid centers
-                float paddingRes = 2.0f;
+                float paddingRes = 2.5f; // slightly larger padding so buildings don't touch
                 float limitRes = lotHalfRes - paddingRes;
-                actualX = glm::clamp(actualX, x - limitRes + halfW, x + limitRes - halfW);
-                actualZ = glm::clamp(actualZ, z - limitRes + halfD, z + limitRes - halfD);
+
+                // Try multiple random offsets to avoid overlap/sticking to neighbors
+                bool placed = false;
+                const int maxAttempts = 6;
+                for (int attempt = 0; attempt < maxAttempts && !placed; ++attempt) {
+                    float tryX = x + (((rand() % 100) / 100.0f - 0.5f) * limitRes * 0.6f);
+                    float tryZ = z + (((rand() % 100) / 100.0f - 0.5f) * limitRes * 0.6f);
+
+                    // Ensure within lot bounds
+                    tryX = glm::clamp(tryX, x - limitRes + halfW, x + limitRes - halfW);
+                    tryZ = glm::clamp(tryZ, z - limitRes + halfD, z + limitRes - halfD);
+
+                    // Check against nearby lots to reduce sticking: simple grid spacing check
+                    bool tooClose = false;
+                    // check direct neighbors in grid (8-neighborhood)
+                    for (int nx = -1; nx <= 1 && !tooClose; ++nx) {
+                        for (int nz = -1; nz <= 1; ++nz) {
+                            if (nx == 0 && nz == 0) continue;
+                            float neighborCenterX = x + nx * 20.0f;
+                            float neighborCenterZ = z + nz * 20.0f;
+                            // If neighbor center is too close (distance less than half lot minus margin), mark tooClose
+                            float dx = tryX - neighborCenterX;
+                            float dz = tryZ - neighborCenterZ;
+                            if (fabs(dx) < (halfW + 6.0f) && fabs(dz) < (halfD + 6.0f)) {
+                                tooClose = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (tooClose) {
+                        // shrink slightly and retry
+                        width = glm::max(4.0f, width - 0.5f);
+                        depth = glm::max(4.0f, depth - 0.5f);
+                        halfW = width * 0.5f;
+                        halfD = depth * 0.5f;
+                        continue;
+                    }
+
+                    // Accept this placement
+                    actualX = tryX;
+                    actualZ = tryZ;
+                    placed = true;
+                }
+
+                if (!placed) {
+                    // As fallback, place at clamped center
+                    actualX = glm::clamp(actualX, x - limitRes + halfW, x + limitRes - halfW);
+                    actualZ = glm::clamp(actualZ, z - limitRes + halfD, z + limitRes - halfD);
+                }
 
                 // Render main building
                 model = glm::mat4(1.0f);
@@ -1080,6 +1034,20 @@ int main()
                 buildingShader.SetVec3("objectColor", houseColors[colorIndex]);
                 glBindVertexArray(cubeVAO);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
+
+                // Add triangular roof if applicable
+                if (hasTriangularRoof) {
+                    float roofHeight = glm::clamp(glm::min(width, depth) * 0.35f, 1.0f, 4.0f);
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(actualX, height + roofHeight / 2.0f + 0.05f, actualZ));
+                    model = glm::scale(model, glm::vec3(width * 1.02f, roofHeight, depth * 1.02f));
+                    buildingShader.SetMat4("model", model);
+                    buildingShader.SetVec3("objectColor", roofColors[roofColorIndex]);
+                    glBindVertexArray(roofVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 18); // roof VAO has 18 vertices
+                    // restore cube vao for following draws
+                    glBindVertexArray(cubeVAO);
+                }
 
                 // Add windows (front facade)
                 int numWindows = (int)height / 3;
@@ -1148,6 +1116,33 @@ int main()
                         glBindVertexArray(cubeVAO);
                         glDrawArrays(GL_TRIANGLES, 0, 36);
                     }
+                }
+
+                // Add a small garage or shed occasionally, placed to the side so it doesn't touch main building
+                if ((rand() % 100) < 20) { // 20% chance
+                    float gW = glm::clamp(width * 0.5f, 2.0f, 5.0f);
+                    float gD = glm::clamp(depth * 0.4f, 2.0f, 5.0f);
+                    float gH = glm::clamp(height * 0.5f, 1.5f, 3.5f);
+                    float side = ((rand() % 2) == 0) ? -1.0f : 1.0f;
+                    float gx = actualX + side * (halfW + gW * 0.5f + 1.0f);
+                    float gz = actualZ + ((rand() % 100) / 100.0f - 0.5f) * 2.0f;
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(gx, gH / 2.0f, gz));
+                    model = glm::scale(model, glm::vec3(gW, gH, gD));
+                    buildingShader.SetMat4("model", model);
+                    buildingShader.SetVec3("objectColor", glm::vec3(0.6f, 0.55f, 0.5f));
+                    glBindVertexArray(cubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+                    // small roof for garage
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(gx, gH + 0.6f, gz));
+                    model = glm::scale(model, glm::vec3(gW * 1.02f, 0.6f, gD * 1.02f));
+                    buildingShader.SetMat4("model", model);
+                    buildingShader.SetVec3("objectColor", glm::vec3(0.35f, 0.25f, 0.2f));
+                    glBindVertexArray(roofVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 18);
+                    glBindVertexArray(cubeVAO);
                 }
             }
         }
@@ -1313,7 +1308,7 @@ GLuint createCube()
     // Cube vertices with normals and texture coordinates
     float vertices[] = {
         // positions          // normals           // texture coords
-        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  0.0f,
          0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
          0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
          0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
