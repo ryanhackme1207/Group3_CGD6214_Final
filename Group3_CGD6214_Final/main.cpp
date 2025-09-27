@@ -18,6 +18,13 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+//global state
+bool useDirectionalLight = true;
+bool lightKeyPressed = false;
+
+float timeOfDay = 12.0f;
+const float DAY_CYCLE_DURATION = 60.0f;
+
 // vertex & fragment shader (skybox)
 const char* skyboxVertexShaderSource = R"(
 #version 330 core
@@ -353,6 +360,12 @@ int main()
         // Input
         processInput(window);
 
+        // Update day-night cycle
+        timeOfDay += (24.0f / DAY_CYCLE_DURATION) * deltaTime;
+        if (timeOfDay >= 24.0f) {
+            timeOfDay = 0.0f;
+        }
+
         // Update cars
         carSpawnTimer += deltaTime;
         if (carSpawnTimer > 1.5f) {  // Spawn a car every 1.5 seconds for more traffic
@@ -366,8 +379,18 @@ int main()
         camera.UpdateOrbitalCamera(deltaTime);
         camera.UpdateTransition(deltaTime);
 
+        // Background color adjust
+        float skyIntensity;
+        if (timeOfDay >= 6.0f && timeOfDay <= 18.0f) {
+            float dayProgress = (timeOfDay - 6.0f) / 12.0f;
+            skyIntensity = 0.6f + 0.2f * sin(dayProgress * M_PI);
+        }
+        else {
+            skyIntensity = 0.1f;
+        }
+
         // Render
-        glClearColor(0.6f, 0.8f, 1.0f, 1.0f);  // Sky blue background
+        glClearColor(0.6f * skyIntensity, 0.8f * skyIntensity, 1.0f * skyIntensity, 1.0f); // Sky blue background
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         buildingShader.Use();
@@ -379,8 +402,66 @@ int main()
         buildingShader.SetMat4("view", view);
 
         // Set lighting uniforms (sun-like lighting)
-        buildingShader.SetVec3("lightPos", glm::vec3(50.0f, 80.0f, 50.0f));
-        buildingShader.SetVec3("lightColor", glm::vec3(1.0f, 0.95f, 0.8f));  // Warm sunlight
+        if (useDirectionalLight) {
+            // Directional light
+            // Calculate sun position based on time of day
+            float sunAngle = (timeOfDay / 24.0f) * 2.0f * M_PI;
+            float sunHeight = sin(sunAngle);
+            float sunHorizontal = cos(sunAngle);
+
+            glm::vec3 sunPosition = glm::vec3(
+                sunHorizontal * 100.0f,
+                sunHeight * 100.0f,
+                0.0f
+            );
+
+            // Calculate light color based on time of day
+            float lightIntensity;
+            glm::vec3 lightColor;
+            glm::vec3 ambientColor;
+
+            if (timeOfDay >= 6.0f && timeOfDay <= 18.0f) {
+                float noonFactor = 1.0f - abs(timeOfDay - 12.0f) / 6.0f;
+                lightIntensity = 0.7f + 0.3f * noonFactor;
+
+                if (timeOfDay < 10.0f) {
+                    lightColor = glm::vec3(1.0f, 0.9f, 0.7f) * lightIntensity;
+                }
+                else if (timeOfDay > 14.0f) {
+                    lightColor = glm::vec3(1.0f, 0.8f, 0.6f) * lightIntensity;
+                }
+                else {
+                    lightColor = glm::vec3(1.0f, 0.95f, 0.9f) * lightIntensity;
+                }
+                ambientColor = glm::vec3(0.3f, 0.4f, 0.5f) * lightIntensity * 0.3f;
+            }
+            else {
+                float nightIntensity = 0.1f + 0.05f * (1.0f - abs(timeOfDay - 0.0f) / 6.0f);
+                lightColor = glm::vec3(0.7f, 0.8f, 1.0f) * nightIntensity;
+                ambientColor = glm::vec3(0.1f, 0.1f, 0.2f) * 0.2f;
+            }
+
+            if (timeOfDay > 17.0f && timeOfDay < 19.0f) {
+                float transition = 1.0f - abs(timeOfDay - 18.0f);
+                lightColor = glm::mix(lightColor, glm::vec3(1.0f, 0.6f, 0.4f), transition);
+                ambientColor = glm::mix(ambientColor, glm::vec3(0.4f, 0.3f, 0.2f), transition);
+            }
+            else if (timeOfDay > 5.0f && timeOfDay < 7.0f) {
+                float transition = 1.0f - abs(timeOfDay - 6.0f);
+                lightColor = glm::mix(lightColor, glm::vec3(1.0f, 0.7f, 0.5f), transition);
+                ambientColor = glm::mix(ambientColor, glm::vec3(0.3f, 0.3f, 0.4f), transition);
+            }
+
+            buildingShader.SetVec3("lightDir", -glm::normalize(sunPosition));
+            buildingShader.SetVec3("lightColor", lightColor);
+            buildingShader.SetVec3("ambientColor", ambientColor);
+        }
+        else {
+            // Point light
+            buildingShader.SetVec3("lightPos", glm::vec3(50.0f, 80.0f, 50.0f));
+            buildingShader.SetVec3("lightColor", glm::vec3(1.0f, 0.95f, 0.8f)); // Warm sunlight
+            buildingShader.SetVec3("ambientColor", glm::vec3(0.2f, 0.2f, 0.3f));
+        }
         buildingShader.SetVec3("viewPos", camera.GetPosition());
 
         // Render ground (grass/concrete)
@@ -980,6 +1061,22 @@ void processInput(GLFWwindow* window)
     }
     else {
         camera.MovementSpeed = 12.0f;  // Normal speed
+    }
+
+    // Light mode
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS && !lightKeyPressed) {
+        lightKeyPressed = true;
+        useDirectionalLight = !useDirectionalLight;
+
+        if (useDirectionalLight) {
+            std::cout << "Light mode: Directional" << std::endl;
+        }
+        else {
+            std::cout << "Light mode: Point" << std::endl;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE) {
+        lightKeyPressed = false;
     }
 }
 
