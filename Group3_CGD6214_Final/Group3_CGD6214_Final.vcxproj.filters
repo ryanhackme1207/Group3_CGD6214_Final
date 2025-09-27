@@ -53,4 +53,24 @@
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <Image Include="textures\nx.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+    <Image Include="textures\ny.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+    <Image Include="textures\nz.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+    <Image Include="textures\px.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+    <Image Include="textures\py.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+    <Image Include="textures\pz.jpg">
+      <Filter>Textures</Filter>
+    </Image>
+  </ItemGroup>
 </Project>

@@ -143,6 +143,14 @@
     <None Include="shaders\ground.frag" />
     <None Include="shaders\Lighting.frag" />
   </ItemGroup>
+  <ItemGroup>
+    <Image Include="textures\nx.jpg" />
+    <Image Include="textures\ny.jpg" />
+    <Image Include="textures\nz.jpg" />
+    <Image Include="textures\px.jpg" />
+    <Image Include="textures\py.jpg" />
+    <Image Include="textures\pz.jpg" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
