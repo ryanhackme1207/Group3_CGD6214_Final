@@ -1,239 +1,340 @@
 #include "Camera.h"
-#include <cmath>
+#include <algorithm>
+#include <iostream>
 
+// Constructor with vectors
 Camera::Camera(glm::vec3 position, glm::vec3 up, float yaw, float pitch)
-    : Front(glm::vec3(0.0f, 0.0f, -1.0f)),
-    MovementSpeed(SPEED),
-    MouseSensitivity(SENSITIVITY),
-    Zoom(ZOOM),
-    Mode(FLY_MODE),
-    CarPosition(glm::vec3(0.0f, -0.8f, 0.0f)),
-    CarYaw(0.0f),
-    CarCameraYaw(0.0f),
-    CarCameraPitch(0.0f),
-    LastMouseMoveTime(0.0f),
-    MouseControlActive(false) {
+    : Front(glm::vec3(0.0f, 0.0f, -1.0f)), MovementSpeed(SPEED), MouseSensitivity(SENSITIVITY), Zoom(ZOOM)
+{
     Position = position;
     WorldUp = up;
     Yaw = yaw;
     Pitch = pitch;
+
+    // Initialize smooth movement
+    SmoothMovement = false;
+    Smoothness = 5.0f;
+    TargetPosition = position;
+    Velocity = glm::vec3(0.0f);
+
+    // Initialize boundaries (large default area)
+    BoundaryMinX = -100.0f;
+    BoundaryMaxX = 100.0f;
+    BoundaryMinZ = -100.0f;
+    BoundaryMaxZ = 100.0f;
+    BoundaryMinY = 1.0f;
+    BoundaryMaxY = 50.0f;
+    CollisionRadius = 2.0f;
+
+    // Initialize camera mode
+    Mode = FREE_FLY;
+    OrbitTarget = glm::vec3(0.0f);
+    OrbitDistance = 15.0f;
+    OrbitSpeed = 1.0f;
+
+    // Initialize transition state
+    isTransitioning = false;
+    transitionTime = 0.0f;
+    transitionDuration = 1.0f;
+
     updateCameraVectors();
 }
 
-glm::mat4 Camera::GetViewMatrix() {
+// Constructor with scalar values
+Camera::Camera(float posX, float posY, float posZ, float upX, float upY, float upZ, float yaw, float pitch)
+    : Camera(glm::vec3(posX, posY, posZ), glm::vec3(upX, upY, upZ), yaw, pitch)
+{
+}
+
+// Returns the view matrix calculated using Euler Angles and the LookAt Matrix
+glm::mat4 Camera::GetViewMatrix()
+{
+    if (Mode == ORBITAL) {
+        glm::vec3 eye = OrbitTarget + glm::vec3(
+            cos(glm::radians(Yaw)) * cos(glm::radians(Pitch)) * OrbitDistance,
+            sin(glm::radians(Pitch)) * OrbitDistance,
+            sin(glm::radians(Yaw)) * cos(glm::radians(Pitch)) * OrbitDistance
+        );
+        return glm::lookAt(eye, OrbitTarget, WorldUp);
+    }
+
     return glm::lookAt(Position, Position + Front, Up);
 }
 
-void Camera::ProcessKeyboard(Camera_Movement direction, float deltaTime) {
-    float velocity = MovementSpeed * deltaTime;
-
-    if (Mode == FLY_MODE) {
-        // Normal flying camera
-        if (direction == FORWARD)
-            Position += Front * velocity;
-        if (direction == BACKWARD)
-            Position -= Front * velocity;
-        if (direction == LEFT)
-            Position -= Right * velocity;
-        if (direction == RIGHT)
-            Position += Right * velocity;
-    }
-    else if (Mode == WALK_MODE) {
-        // First person walking - only move on XZ plane
-        glm::vec3 frontXZ = glm::normalize(glm::vec3(Front.x, 0.0f, Front.z));
-        glm::vec3 rightXZ = glm::normalize(glm::vec3(Right.x, 0.0f, Right.z));
-
-        if (direction == FORWARD)
-            Position += frontXZ * velocity;
-        if (direction == BACKWARD)
-            Position -= frontXZ * velocity;
-        if (direction == LEFT)
-            Position -= rightXZ * velocity;
-        if (direction == RIGHT)
-            Position += rightXZ * velocity;
-
-        // Keep at ground level
-        Position.y = -0.5f; // Eye height above ground level
-    }
-    else if (Mode == CAR_MODE) {
-        // GTA V style car driving controls
-        static float carVelocity = 0.0f;
-        static bool isReversing = false;
-
-        const float maxSpeed = 15.0f;
-        const float acceleration = 25.0f;
-        const float braking = 35.0f;
-        const float friction = 10.0f;
-        const float turnSpeed = 120.0f;
-
-        if (direction == FORWARD) {
-            // W = Gas pedal (accelerate forward)
-            if (isReversing) {
-                // Braking from reverse
-                carVelocity += braking * deltaTime;
-                if (carVelocity >= 0.0f) {
-                    carVelocity = 0.0f;
-                    isReversing = false;
-                }
-            }
-            else {
-                // Accelerating forward
-                carVelocity += acceleration * deltaTime;
-                if (carVelocity > maxSpeed) carVelocity = maxSpeed;
-            }
-        }
-        else if (direction == BACKWARD) {
-            // S = Brake or Reverse
-            if (carVelocity > 0.0f) {
-                // Braking
-                carVelocity -= braking * deltaTime;
-                if (carVelocity < 0.0f) carVelocity = 0.0f;
-            }
-            else {
-                // Reversing
-                carVelocity -= acceleration * deltaTime * 0.6f; // Slower reverse
-                if (carVelocity < -maxSpeed * 0.5f) carVelocity = -maxSpeed * 0.5f;
-                isReversing = true;
-            }
-        }
-        else {
-            // Natural friction when no gas/brake
-            if (carVelocity > 0.0f) {
-                carVelocity -= friction * deltaTime;
-                if (carVelocity < 0.0f) carVelocity = 0.0f;
-            }
-            else if (carVelocity < 0.0f) {
-                carVelocity += friction * deltaTime;
-                if (carVelocity > 0.0f) carVelocity = 0.0f;
-            }
-        }
-
-        // Steering (only works when moving)
-        if (fabsf(carVelocity) > 0.1f) {
-            float steerMultiplier = fabsf(carVelocity) / maxSpeed; // More responsive at higher speeds
-            if (direction == LEFT) {
-                CarYaw -= turnSpeed * steerMultiplier * deltaTime;
-            }
-            if (direction == RIGHT) {
-                CarYaw += turnSpeed * steerMultiplier * deltaTime;
-            }
-        }
-
-        // Move car based on velocity and direction
-        if (fabsf(carVelocity) > 0.01f) {
-            CarPosition.x += sinf(glm::radians(CarYaw)) * carVelocity * deltaTime;
-            CarPosition.z += cosf(glm::radians(CarYaw)) * carVelocity * deltaTime;
-        }
-
-        // Keep car on ground
-        CarPosition.y = -0.3f;
-
-        // Update mouse timeout timer
-        LastMouseMoveTime += deltaTime;
-
-        // Auto-center camera if mouse hasn't moved for 2 seconds
-        if (LastMouseMoveTime > 2.0f && MouseControlActive) {
-            MouseControlActive = false;
-            // Smoothly reset camera to forward direction
-            CarCameraYaw *= 0.95f; // Smooth transition back to center
-            CarCameraPitch *= 0.95f;
-            if (fabsf(CarCameraYaw) < 0.5f) CarCameraYaw = 0.0f;
-            if (fabsf(CarCameraPitch) < 0.5f) CarCameraPitch = 0.0f;
-        }
-
-        // Calculate camera position behind car
-        glm::vec3 carForward = glm::vec3(sinf(glm::radians(CarYaw)), 0.0f, cosf(glm::radians(CarYaw)));
-        Position = CarPosition - carForward * 8.0f + glm::vec3(0.0f, 3.0f, 0.0f);
-
-        // Set camera direction based on car + mouse control
-        Yaw = CarYaw + CarCameraYaw;
-        Pitch = CarCameraPitch;
-
-        updateCameraVectors();
-    }
+// Returns the projection matrix
+glm::mat4 Camera::GetProjectionMatrix(float aspectRatio, float nearPlane, float farPlane)
+{
+    return glm::perspective(glm::radians(Zoom), aspectRatio, nearPlane, farPlane);
 }
 
-void Camera::ProcessMouseMovement(float xoffset, float yoffset, GLboolean constrainPitch) {
+// Processes input received from any keyboard-like input system
+void Camera::ProcessKeyboard(Camera_Movement direction, float deltaTime)
+{
+    float velocity = MovementSpeed * deltaTime;
+    glm::vec3 newPosition = Position;
+
+    if (Mode == ORBITAL) {
+        // In orbital mode, WASD controls orbit angle and distance
+        if (direction == FORWARD)
+            OrbitDistance = std::max(2.0f, OrbitDistance - velocity * 2.0f);
+        if (direction == BACKWARD)
+            OrbitDistance = std::min(50.0f, OrbitDistance + velocity * 2.0f);
+        if (direction == LEFT)
+            Yaw -= velocity * 30.0f;
+        if (direction == RIGHT)
+            Yaw += velocity * 30.0f;
+        if (direction == UP)
+            Pitch = std::min(89.0f, Pitch + velocity * 30.0f);
+        if (direction == DOWN)
+            Pitch = std::max(-89.0f, Pitch - velocity * 30.0f);
+        return;
+    }
+
+    // Standard movement for other modes
+    if (direction == FORWARD)
+        newPosition += Front * velocity;
+    if (direction == BACKWARD)
+        newPosition -= Front * velocity;
+    if (direction == LEFT)
+        newPosition -= Right * velocity;
+    if (direction == RIGHT)
+        newPosition += Right * velocity;
+    if (direction == UP)
+        newPosition += WorldUp * velocity;
+    if (direction == DOWN)
+        newPosition -= WorldUp * velocity;
+
+    // Apply movement immediately (disable smooth movement for debugging)
+    Position = newPosition;
+    ApplyBoundaries();
+
+    // Debug output (remove later)
+    std::cout << "Camera Position: (" << Position.x << ", " << Position.y << ", " << Position.z << ")" << std::endl;
+}
+
+// Processes input received from a mouse input system
+void Camera::ProcessMouseMovement(float xoffset, float yoffset, bool constrainPitch)
+{
     xoffset *= MouseSensitivity;
     yoffset *= MouseSensitivity;
 
-    if (Mode == CAR_MODE) {
-        // Car camera control - use separate camera yaw/pitch
-        CarCameraYaw += xoffset;
-        CarCameraPitch += yoffset;
+    Yaw += xoffset;
+    Pitch += yoffset;
 
-        // Constrain pitch for car camera
-        if (CarCameraPitch > 60.0f)
-            CarCameraPitch = 60.0f;
-        if (CarCameraPitch < -30.0f)
-            CarCameraPitch = -30.0f;
-
-        // Update mouse activity tracking
-        MouseControlActive = true;
-        LastMouseMoveTime = 0.0f; // Reset timer
-
-        // Update camera angles for car mode
-        Yaw = CarYaw + CarCameraYaw;
-        Pitch = CarCameraPitch;
-        updateCameraVectors();
+    // Make sure that when pitch is out of bounds, screen doesn't get flipped
+    if (constrainPitch) {
+        if (Pitch > 89.0f)
+            Pitch = 89.0f;
+        if (Pitch < -89.0f)
+            Pitch = -89.0f;
     }
-    else {
-        // Normal camera control for fly/walk modes
-        Yaw += xoffset;
-        Pitch += yoffset;
 
-        if (constrainPitch) {
-            if (Pitch > 89.0f)
-                Pitch = 89.0f;
-            if (Pitch < -89.0f)
-                Pitch = -89.0f;
+    // Update Front, Right and Up Vectors using the updated Euler angles
+    updateCameraVectors();
+}
+
+// Processes input received from a mouse scroll-wheel event
+void Camera::ProcessMouseScroll(float yoffset)
+{
+    Zoom -= yoffset;
+    if (Zoom < MIN_ZOOM)
+        Zoom = MIN_ZOOM;
+    if (Zoom > MAX_ZOOM)
+        Zoom = MAX_ZOOM;
+}
+
+// Set camera boundaries
+void Camera::SetBoundaries(float minX, float maxX, float minZ, float maxZ, float minY, float maxY)
+{
+    BoundaryMinX = minX;
+    BoundaryMaxX = maxX;
+    BoundaryMinZ = minZ;
+    BoundaryMaxZ = maxZ;
+    BoundaryMinY = minY;
+    BoundaryMaxY = maxY;
+}
+
+// Set collision radius
+void Camera::SetCollisionRadius(float radius)
+{
+    CollisionRadius = radius;
+}
+
+// Check collision with buildings
+bool Camera::CheckCollisionWithBuilding(glm::vec3 newPosition, const std::vector<glm::vec3>& buildingPositions,
+    const std::vector<glm::vec3>& buildingSizes)
+{
+    for (size_t i = 0; i < buildingPositions.size(); ++i) {
+        glm::vec3 buildingPos = buildingPositions[i];
+        glm::vec3 buildingSize = buildingSizes[i];
+
+        // Check if camera is inside building bounds (with collision radius)
+        if (newPosition.x + CollisionRadius > buildingPos.x - buildingSize.x / 2.0f &&
+            newPosition.x - CollisionRadius < buildingPos.x + buildingSize.x / 2.0f &&
+            newPosition.z + CollisionRadius > buildingPos.z - buildingSize.z / 2.0f &&
+            newPosition.z - CollisionRadius < buildingPos.z + buildingSize.z / 2.0f &&
+            newPosition.y < buildingPos.y + buildingSize.y) {
+            return true; // Collision detected
         }
-        updateCameraVectors();
+    }
+    return false; // No collision
+}
+
+// Apply boundary constraints
+void Camera::ApplyBoundaries()
+{
+    Position.x = std::max(BoundaryMinX, std::min(BoundaryMaxX, Position.x));
+    Position.y = std::max(BoundaryMinY, std::min(BoundaryMaxY, Position.y));
+    Position.z = std::max(BoundaryMinZ, std::min(BoundaryMaxZ, Position.z));
+}
+
+// Enable or disable smooth movement
+void Camera::EnableSmoothMovement(bool enable, float smoothness)
+{
+    SmoothMovement = enable;
+    Smoothness = smoothness;
+    if (enable) {
+        TargetPosition = Position;
+        Velocity = glm::vec3(0.0f);
     }
 }
 
-void Camera::ProcessMouseScroll(float yoffset) {
-    Zoom -= (float)yoffset;
-    if (Zoom < 1.0f)
-        Zoom = 1.0f;
-    if (Zoom > 45.0f)
-        Zoom = 45.0f;
+// Update smooth movement
+void Camera::UpdateSmoothMovement(float deltaTime)
+{
+    if (!SmoothMovement) return;
+
+    // Calculate velocity towards target
+    glm::vec3 direction = TargetPosition - Position;
+    float distance = glm::length(direction);
+
+    if (distance > 0.01f) { // Only move if significant distance
+        // Apply spring-like movement
+        Velocity += direction * Smoothness * deltaTime;
+        Velocity *= 0.8f; // Damping
+
+        Position += Velocity * deltaTime;
+        ApplyBoundaries();
+    }
 }
 
-void Camera::SetMode(Camera_Mode mode) {
+// Set target position for smooth movement
+void Camera::SetTargetPosition(glm::vec3 target)
+{
+    TargetPosition = target;
+}
+
+// Set camera mode
+void Camera::SetCameraMode(CameraMode mode)
+{
     Mode = mode;
-    if (mode == WALK_MODE) {
-        Position.y = 0.8f; // Set eye height
-    }
-    else if (mode == CAR_MODE) {
-        CarPosition = glm::vec3(Position.x, -0.3f, Position.z);
-        CarYaw = Yaw + 90.0f;
-
-        // Initialize car camera control
-        CarCameraYaw = 0.0f;
-        CarCameraPitch = 0.0f;
-        LastMouseMoveTime = 0.0f;
-        MouseControlActive = false;
+    if (mode == ORBITAL && OrbitTarget == glm::vec3(0.0f)) {
+        // Set default orbit target to scene center
+        OrbitTarget = glm::vec3(0.0f, 5.0f, 0.0f);
     }
 }
 
-void Camera::UpdateWalkMode() {
-    // Constrain pitch in walk mode for more natural movement
-    if (Pitch > 60.0f) Pitch = 60.0f;
-    if (Pitch < -60.0f) Pitch = -60.0f;
+// Update orbital camera
+void Camera::UpdateOrbitalCamera(float deltaTime)
+{
+    if (Mode != ORBITAL) return;
+
+    // Auto-rotation can be added here if desired
+    // Yaw += OrbitSpeed * deltaTime * 10.0f; // Uncomment for auto-rotation
 }
 
-void Camera::UpdateCarMode() {
-    // Update camera position based on car position
-    Position = CarPosition + glm::vec3(0.0f, 1.2f, 0.0f);
+// Set orbit target
+void Camera::SetOrbitTarget(glm::vec3 target, float distance)
+{
+    OrbitTarget = target;
+    OrbitDistance = distance;
 }
 
-void Camera::updateCameraVectors() {
-    glm::vec3 front;
-    front.x = cosf(glm::radians(Yaw)) * cosf(glm::radians(Pitch));
-    front.y = sinf(glm::radians(Pitch));
-    front.z = sinf(glm::radians(Yaw)) * cosf(glm::radians(Pitch));
-    Front = glm::normalize(front);
+// Reset camera to default values
+void Camera::ResetToDefault()
+{
+    Position = glm::vec3(0.0f, 5.0f, 10.0f);
+    Yaw = YAW;
+    Pitch = PITCH;
+    Zoom = ZOOM;
+    MovementSpeed = SPEED;
+    MouseSensitivity = SENSITIVITY;
+    Mode = FREE_FLY;
+    OrbitDistance = 15.0f;
+
+    updateCameraVectors();
+}
+
+// Smooth transition between positions
+void Camera::SmoothTransitionTo(glm::vec3 newPosition, glm::vec3 newTarget, float duration)
+{
+    isTransitioning = true;
+    transitionTime = 0.0f;
+    transitionDuration = duration;
+    startPosition = Position;
+    endPosition = newPosition;
+
+    // Calculate target front direction
+    glm::vec3 targetDirection = glm::normalize(newTarget - newPosition);
+    startTarget = Position + Front;
+    endTarget = newPosition + targetDirection;
+}
+
+// Update transition
+void Camera::UpdateTransition(float deltaTime)
+{
+    if (!isTransitioning) return;
+
+    transitionTime += deltaTime;
+    float t = transitionTime / transitionDuration;
+
+    if (t >= 1.0f) {
+        t = 1.0f;
+        isTransitioning = false;
+    }
+
+    // Apply smooth interpolation
+    float smoothT = smoothstep(t);
+    Position = lerp(startPosition, endPosition, smoothT);
+
+    // Update front vector based on interpolated target
+    glm::vec3 currentTarget = lerp(startTarget, endTarget, smoothT);
+    Front = glm::normalize(currentTarget - Position);
+
+    // Recalculate camera vectors
     Right = glm::normalize(glm::cross(Front, WorldUp));
     Up = glm::normalize(glm::cross(Right, Front));
+}
+
+// Private helper functions
+void Camera::updateCameraVectors()
+{
+    // Calculate the new Front vector
+    glm::vec3 front;
+    front.x = cos(glm::radians(Yaw)) * cos(glm::radians(Pitch));
+    front.y = sin(glm::radians(Pitch));
+    front.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
+    Front = glm::normalize(front);
+
+    // Also re-calculate the Right and Up vector
+    Right = glm::normalize(glm::cross(Front, WorldUp));
+    Up = glm::normalize(glm::cross(Right, Front));
+}
+
+// Linear interpolation
+float Camera::lerp(float a, float b, float t)
+{
+    return a + t * (b - a);
+}
+
+// Vector linear interpolation
+glm::vec3 Camera::lerp(const glm::vec3& a, const glm::vec3& b, float t)
+{
+    return a + t * (b - a);
+}
+
+// Smooth step function for smoother transitions
+float Camera::smoothstep(float t)
+{
+    return t * t * (3.0f - 2.0f * t);
 }

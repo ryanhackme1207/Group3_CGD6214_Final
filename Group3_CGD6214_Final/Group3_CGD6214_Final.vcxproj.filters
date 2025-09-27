@@ -24,83 +24,32 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="shader.cpp">
+    <ClCompile Include="Camera.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Building.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="CityManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="LightingSystem.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="MaterialSystem.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="AdvancedCamera.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Node.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Entity.cpp">
+    <ClCompile Include="Shader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="shader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Building.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Node.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="stb_image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CityManager.h">
+    <ClInclude Include="Camera.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="LightingSystem.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MaterialSystem.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="AdvancedCamera.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Entity.h">
+    <ClInclude Include="Shader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\advancedFragment.fs">
+    <None Include="shaders\basic.vert">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\advancedVertex.vs">
+    <None Include="shaders\ground.frag">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\postProcess.fs">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\postProcess.vs">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\shadowMap.fs">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\shadowMap.vs">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\skybox.fs">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\skybox.vs">
+    <None Include="shaders\Lighting.frag">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>

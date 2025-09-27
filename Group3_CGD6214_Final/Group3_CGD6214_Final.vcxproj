@@ -129,36 +129,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="AdvancedCamera.cpp" />
-    <ClCompile Include="Building.cpp" />
-    <ClCompile Include="CityManager.cpp" />
-    <ClCompile Include="Entity.cpp" />
-    <ClCompile Include="LightingSystem.cpp" />
+    <ClCompile Include="Camera.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="MaterialSystem.cpp" />
-    <ClCompile Include="Node.cpp" />
-    <ClCompile Include="shader.cpp" />
+    <ClCompile Include="Shader.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="AdvancedCamera.h" />
-    <ClInclude Include="Building.h" />
-    <ClInclude Include="CityManager.h" />
-    <ClInclude Include="Entity.h" />
-    <ClInclude Include="LightingSystem.h" />
-    <ClInclude Include="MaterialSystem.h" />
-    <ClInclude Include="Node.h" />
-    <ClInclude Include="shader.h" />
+    <ClInclude Include="Camera.h" />
+    <ClInclude Include="Shader.h" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\advancedFragment.fs" />
-    <None Include="shaders\advancedVertex.vs" />
-    <None Include="shaders\postProcess.fs" />
-    <None Include="shaders\postProcess.vs" />
-    <None Include="shaders\shadowMap.fs" />
-    <None Include="shaders\shadowMap.vs" />
-    <None Include="shaders\skybox.fs" />
-    <None Include="shaders\skybox.vs" />
+    <None Include="shaders\basic.vert" />
+    <None Include="shaders\ground.frag" />
+    <None Include="shaders\Lighting.frag" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
