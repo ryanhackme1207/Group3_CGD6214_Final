@@ -901,6 +901,7 @@ int main()
 
                     glBindVertexArray(cubeVAO);
                     glDrawArrays(GL_TRIANGLES, 0, 36);
+
                     continue;
                 }
 
@@ -915,6 +916,7 @@ int main()
 
                     glBindVertexArray(cubeVAO);
                     glDrawArrays(GL_TRIANGLES, 0, 36);
+
                     continue;
                 }
 
