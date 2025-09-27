@@ -4,11 +4,19 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
+#include <vector>
+#include <cmath>
+#include <cstdlib>
+#include <ctime>
 #include "Camera.h"
 #include "Shader.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // vertex & fragment shader (skybox)
 const char* skyboxVertexShaderSource = R"(
@@ -69,12 +77,26 @@ struct Car {
     float length;
     int lane;  // 0 = right lane, 1 = left lane
     int roadType; // 0 = main road X, 1 = main road Z, 2 = highway X, 3 = highway Z
+    int carType; // 0 = sedan, 1 = SUV, 2 = truck, 3 = hatchback
 
-    Car(glm::vec3 pos, glm::vec3 dir, glm::vec3 col, float spd, int ln, int rt)
-        : position(pos), direction(dir), color(col), speed(spd), lane(ln), roadType(rt) {
-        width = 1.8f + (rand() % 3) * 0.2f;   // 1.8-2.2m wide
-        height = 1.4f + (rand() % 2) * 0.3f;  // 1.4-1.7m tall  
-        length = 4.0f + (rand() % 3) * 0.5f;  // 4.0-5.0m long
+    Car(glm::vec3 pos, glm::vec3 dir, glm::vec3 col, float spd, int ln, int rt, int ct)
+        : position(pos), direction(dir), color(col), speed(spd), lane(ln), roadType(rt), carType(ct) {
+
+        // Different dimensions based on car type
+        switch (carType) {
+        case 0: // Sedan
+            width = 1.8f; height = 1.4f; length = 4.5f;
+            break;
+        case 1: // SUV
+            width = 2.0f; height = 1.8f; length = 4.8f;
+            break;
+        case 2: // Truck
+            width = 2.2f; height = 2.0f; length = 5.5f;
+            break;
+        case 3: // Hatchback
+            width = 1.7f; height = 1.5f; length = 3.8f;
+            break;
+        }
     }
 };
 
@@ -89,9 +111,12 @@ void processInput(GLFWwindow* window);
 GLuint createCube();
 GLuint createGround();
 GLuint createTriangularRoof();
+GLuint createCylinder();
 void updateCars(float deltaTime);
 void spawnCar();
 void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime);
+void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
+void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
 
 // Vertax (skybox)
 float skyboxVertices[] = {
@@ -298,6 +323,7 @@ int main()
     GLuint cubeVAO = createCube();
     GLuint groundVAO = createGround();
     GLuint roofVAO = createTriangularRoof();
+    GLuint cylinderVAO = createCylinder();
 
     // Set up camera boundaries for the larger city with tall buildings
     camera.SetBoundaries(-120.0f, 120.0f, -120.0f, 120.0f, 2.0f, 300.0f);  // Higher ceiling for tall buildings
@@ -473,43 +499,12 @@ int main()
         // === RENDER ROAD INFRASTRUCTURE ===
         renderRoadInfrastructure(buildingShader, cubeVAO, glfwGetTime());
 
-        // === RENDER MOVING CARS ===
+        // === RENDER TREES ===
+        renderTrees(buildingShader, cubeVAO, cylinderVAO);
+
+        // === RENDER REALISTIC MOVING CARS ===
         for (const auto& car : cars) {
-            // Main car body
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, car.position);
-            model = glm::scale(model, glm::vec3(car.width, car.height, car.length));
-            buildingShader.SetMat4("model", model);
-            buildingShader.SetVec3("objectColor", car.color);
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            // Car windows (darker, positioned on top)
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(car.position.x, car.position.y + car.height * 0.25f, car.position.z));
-            model = glm::scale(model, glm::vec3(car.width * 0.8f, car.height * 0.4f, car.length * 0.6f));
-            buildingShader.SetMat4("model", model);
-            buildingShader.SetVec3("objectColor", glm::vec3(0.15f, 0.15f, 0.25f));  // Dark blue windows
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            // Car headlights/taillights based on direction
-            glm::vec3 lightColor = glm::vec3(0.9f, 0.9f, 0.8f);  // Default white headlights
-            if (car.direction.x < 0 || car.direction.z < 0) {
-                lightColor = glm::vec3(0.9f, 0.1f, 0.1f);  // Red taillights for cars going opposite direction
-            }
-
-            // Front/rear lights
-            float lightOffsetZ = car.length * 0.4f;
-            if (car.direction.x < 0 || car.direction.z < 0) lightOffsetZ *= -1;  // Taillights on back
-
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(car.position.x, car.position.y, car.position.z + lightOffsetZ));
-            model = glm::scale(model, glm::vec3(car.width * 0.6f, car.height * 0.2f, 0.1f));
-            buildingShader.SetMat4("model", model);
-            buildingShader.SetVec3("objectColor", lightColor);
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
+            renderRealisticCar(car, buildingShader, cubeVAO, cylinderVAO);
         }
 
         // Realistic building colors
@@ -778,87 +773,76 @@ int main()
                 model = glm::scale(model, glm::vec3(width, height, depth));
                 buildingShader.SetMat4("model", model);
                 buildingShader.SetVec3("objectColor", houseColors[colorIndex]);
-
                 glBindVertexArray(cubeVAO);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
 
-                // Render roof
-                if (hasTriangularRoof) {
-                    // Triangular roof
-                    float roofHeight = 3.0f + (rand() % 2) * 1.0f;  // 3-4m roof height
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(actualX, height + roofHeight / 2.0f, actualZ));
-                    model = glm::scale(model, glm::vec3(width + 1.0f, roofHeight, depth + 1.0f));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", roofColors[roofColorIndex]);
-
-                    glBindVertexArray(roofVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 18);  // Triangular roof has 18 vertices
-                }
-                else {
-                    // Flat roof with slight overhang
-                    float roofHeight = 0.5f;
-                    float roofWidth = width + 0.5f;
-                    float roofDepth = depth + 0.5f;
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(actualX, height + roofHeight / 2.0f, actualZ));
-                    model = glm::scale(model, glm::vec3(roofWidth, roofHeight, roofDepth));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", roofColors[roofColorIndex]);
-
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                // Add windows (front facade)
+                int numWindows = (int)height / 3;
+                for (int w = 0; w < numWindows; ++w) {
+                    float winY = 1.0f + w * 2.5f;
+                    float winWidth = width * 0.18f;
+                    float winHeight = height * 0.18f;
+                    float winZ = actualZ + depth / 2.0f + 0.01f;
+                    float winX = actualX - width * 0.25f;
+                    for (int i = 0; i < 2; ++i) {
+                        model = glm::mat4(1.0f);
+                        model = glm::translate(model, glm::vec3(winX + i * width * 0.5f, winY, winZ));
+                        model = glm::scale(model, glm::vec3(winWidth, winHeight, 0.05f));
+                        buildingShader.SetMat4("model", model);
+                        buildingShader.SetVec3("objectColor", glm::vec3(0.6f, 0.8f, 0.95f)); // Glass blue
+                        glBindVertexArray(cubeVAO);
+                        glDrawArrays(GL_TRIANGLES, 0, 36);
+                    }
                 }
 
-                // Add chimney to some houses with triangular roofs
-                if (hasTriangularRoof && (rand() % 3) == 0) {  // 33% chance
-                    float chimneyHeight = 2.0f + (rand() % 2) * 0.5f;
-                    float chimneySize = 0.8f;
+                // Add door (front facade, ground level)
+                float doorWidth = width * 0.22f;
+                float doorHeight = height * 0.32f;
+                float doorX = actualX;
+                float doorY = doorHeight / 2.0f;
+                float doorZ = actualZ + depth / 2.0f + 0.01f;
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(doorX, doorY, doorZ));
+                model = glm::scale(model, glm::vec3(doorWidth, doorHeight, 0.07f));
+                buildingShader.SetMat4("model", model);
+                buildingShader.SetVec3("objectColor", glm::vec3(0.7f, 0.5f, 0.3f)); // Brown door
+                glBindVertexArray(cubeVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
 
-                    // Position chimney randomly on roof
-                    float chimneyX = actualX + ((rand() % 100) / 100.0f - 0.5f) * width * 0.6f;
-                    float chimneyZ = actualZ + ((rand() % 100) / 100.0f - 0.5f) * depth * 0.6f;
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(chimneyX, height + 3.0f + chimneyHeight / 2.0f, chimneyZ));
-                    model = glm::scale(model, glm::vec3(chimneySize, chimneyHeight, chimneySize));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", glm::vec3(0.6f, 0.4f, 0.3f));  // Brick color
-
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                // Add balconies for apartments
+                if (!hasTriangularRoof && height > 12.0f) {
+                    int numBalconies = (int)height / 6;
+                    for (int b = 0; b < numBalconies; ++b) {
+                        float balY = 2.0f + b * 5.0f;
+                        float balWidth = width * 0.5f;
+                        float balDepth = 1.0f;
+                        float balX = actualX;
+                        float balZ = actualZ + depth / 2.0f + balDepth / 2.0f + 0.02f;
+                        model = glm::mat4(1.0f);
+                        model = glm::translate(model, glm::vec3(balX, balY, balZ));
+                        model = glm::scale(model, glm::vec3(balWidth, 0.2f, balDepth));
+                        buildingShader.SetMat4("model", model);
+                        buildingShader.SetVec3("objectColor", glm::vec3(0.7f, 0.7f, 0.7f)); // Balcony gray
+                        glBindVertexArray(cubeVAO);
+                        glDrawArrays(GL_TRIANGLES, 0, 36);
+                    }
                 }
 
-                // Add garage to some single family houses
-                if (buildingType < 40 && (rand() % 2) == 0) {  // 50% chance for single family houses
-                    float garageWidth = 4.0f;
-                    float garageDepth = 6.0f;
-                    float garageHeight = 3.0f;
-
-                    // Position garage next to house
-                    float garageX = actualX + (width / 2.0f + garageWidth / 2.0f + 1.0f);
-                    if (rand() % 2) garageX = actualX - (width / 2.0f + garageWidth / 2.0f + 1.0f);
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(garageX, garageHeight / 2.0f, actualZ));
-                    model = glm::scale(model, glm::vec3(garageWidth, garageHeight, garageDepth));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", houseColors[colorIndex] * 0.9f);  // Slightly darker
-
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    // Garage roof
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(garageX, garageHeight + 0.25f, actualZ));
-                    model = glm::scale(model, glm::vec3(garageWidth + 0.3f, 0.5f, garageDepth + 0.3f));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", roofColors[roofColorIndex]);
-
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                // Add rooftop details (air conditioner units)
+                if (!hasTriangularRoof && (rand() % 2 == 0)) {
+                    int numUnits = 1 + rand() % 2;
+                    for (int u = 0; u < numUnits; ++u) {
+                        float unitX = actualX + (width * 0.3f) * (u == 0 ? -1 : 1);
+                        float unitY = height + 0.35f;
+                        float unitZ = actualZ + depth * 0.2f;
+                        model = glm::mat4(1.0f);
+                        model = glm::translate(model, glm::vec3(unitX, unitY, unitZ));
+                        model = glm::scale(model, glm::vec3(0.7f, 0.35f, 0.7f));
+                        buildingShader.SetMat4("model", model);
+                        buildingShader.SetVec3("objectColor", glm::vec3(0.85f, 0.85f, 0.85f)); // AC unit
+                        glBindVertexArray(cubeVAO);
+                        glDrawArrays(GL_TRIANGLES, 0, 36);
+                    }
                 }
             }
         }
@@ -888,6 +872,7 @@ int main()
     glDeleteVertexArrays(1, &cubeVAO);
     glDeleteVertexArrays(1, &groundVAO);
     glDeleteVertexArrays(1, &roofVAO);
+    glDeleteVertexArrays(1, &cylinderVAO);
     glDeleteVertexArrays(1, &skyboxVAO);
     glDeleteBuffers(1, &skyboxVBO);
     glDeleteProgram(skyboxShader);
@@ -1090,51 +1075,55 @@ void updateCars(float deltaTime) {
 
 // Spawn new cars at road entrances
 void spawnCar() {
-    if (cars.size() >= 50) return;  // Limit number of cars
+    if (cars.size() >= 40) return;  // Limit number of cars
 
+    // Realistic car colors
     glm::vec3 carColors[] = {
+        glm::vec3(0.1f, 0.1f, 0.1f),   // Black
+        glm::vec3(0.9f, 0.9f, 0.9f),   // White
+        glm::vec3(0.7f, 0.7f, 0.7f),   // Silver
         glm::vec3(0.8f, 0.1f, 0.1f),   // Red
-        glm::vec3(0.1f, 0.1f, 0.8f),   // Blue  
-        glm::vec3(0.1f, 0.6f, 0.1f),   // Green
-        glm::vec3(0.9f, 0.9f, 0.1f),   // Yellow
-        glm::vec3(0.8f, 0.8f, 0.8f),   // Silver
+        glm::vec3(0.1f, 0.3f, 0.8f),   // Blue
         glm::vec3(0.2f, 0.2f, 0.2f),   // Dark gray
-        glm::vec3(0.6f, 0.3f, 0.1f),   // Brown
-        glm::vec3(0.9f, 0.9f, 0.9f)    // White
+        glm::vec3(0.6f, 0.3f, 0.1f),   // Brown/Bronze
+        glm::vec3(0.1f, 0.5f, 0.2f),   // Dark green
+        glm::vec3(0.8f, 0.8f, 0.1f),   // Yellow
+        glm::vec3(0.5f, 0.1f, 0.5f)    // Purple
     };
 
-    int colorIndex = rand() % 8;
-    int roadType = rand() % 2;  // Focus on main highways (0 = East-West, 1 = North-South)
-    int lane = rand() % 2;      // Choose lane (0 = right lane, 1 = left lane)
-    float speed = 20.0f + (rand() % 8) * 3.0f;  // 20-41 units/second
+    int colorIndex = rand() % 10;
+    int roadType = rand() % 2;  // Focus on main highways
+    int lane = rand() % 2;      // Choose lane
+    int carType = rand() % 4;   // Choose car type (sedan, SUV, truck, hatchback)
+    float speed = 18.0f + (rand() % 8) * 2.5f;  // 18-38 units/second
 
     glm::vec3 position, direction;
 
     switch (roadType) {
     case 0: // East-West Highway
-        if (lane == 0) {  // Right lane (going East/positive X)
-            position = glm::vec3(-120.0f, 0.8f, -6.0f);  // Right lane position
+        if (lane == 0) {  // Right lane (going East)
+            position = glm::vec3(-120.0f, 0.8f, -6.0f);
             direction = glm::vec3(1.0f, 0.0f, 0.0f);
         }
-        else {  // Left lane (going West/negative X)
-            position = glm::vec3(120.0f, 0.8f, 6.0f);   // Left lane position
+        else {  // Left lane (going West)
+            position = glm::vec3(120.0f, 0.8f, 6.0f);
             direction = glm::vec3(-1.0f, 0.0f, 0.0f);
         }
         break;
 
     case 1: // North-South Highway
-        if (lane == 0) {  // Right lane (going North/positive Z)
-            position = glm::vec3(6.0f, 0.8f, -120.0f);   // Right lane position
+        if (lane == 0) {  // Right lane (going North)
+            position = glm::vec3(6.0f, 0.8f, -120.0f);
             direction = glm::vec3(0.0f, 0.0f, 1.0f);
         }
-        else {  // Left lane (going South/negative Z)
-            position = glm::vec3(-6.0f, 0.8f, 120.0f);  // Left lane position
+        else {  // Left lane (going South)
+            position = glm::vec3(-6.0f, 0.8f, 120.0f);
             direction = glm::vec3(0.0f, 0.0f, -1.0f);
         }
         break;
     }
 
-    cars.emplace_back(position, direction, carColors[colorIndex], speed, lane, roadType);
+    cars.emplace_back(position, direction, carColors[colorIndex], speed, lane, roadType, carType);
 }
 
 // Render road infrastructure (signs, lights, barriers)
@@ -1166,6 +1155,19 @@ void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime)
             shader.SetVec3("objectColor", glm::vec3(brightness, brightness, 0.9f));  // Cool light
 
             glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // --- STREET LIGHT GLOW EFFECT ---
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(i, 9.5f, zPos));
+            model = glm::scale(model, glm::vec3(2.2f, 1.8f, 2.2f)); // Larger, soft glow
+            shader.SetMat4("model", model);
+            shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 0.8f)); // Warm glow
+            // If your shader supports alpha, set alpha here. Otherwise, use color intensity.
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glDisable(GL_BLEND);
         }
     }
 
@@ -1194,6 +1196,19 @@ void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime)
             shader.SetVec3("objectColor", glm::vec3(brightness, brightness, 0.9f));
 
             glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // --- STREET LIGHT GLOW EFFECT ---
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(xPos, 9.5f, i));
+            model = glm::scale(model, glm::vec3(2.2f, 1.8f, 2.2f)); // Larger, soft glow
+            shader.SetMat4("model", model);
+            shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 0.8f)); // Warm glow
+            // If your shader supports alpha, set alpha here. Otherwise, use color intensity.
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glDisable(GL_BLEND);
         }
     }
 
@@ -1323,10 +1338,10 @@ GLuint createGround()
     // Ground vertices (a large plane)
     float vertices[] = {
         // positions          // normals           // texture coords
-        -1.0f, 0.0f, -1.0f,   0.0f, 1.0f, 0.0f,   0.0f, 0.0f,
-         1.0f, 0.0f, -1.0f,   0.0f, 1.0f, 0.0f,   1.0f, 0.0f,
-         1.0f, 0.0f,  1.0f,   0.0f, 1.0f, 0.0f,   1.0f, 1.0f,
-        -1.0f, 0.0f,  1.0f,   0.0f, 1.0f, 0.0f,   0.0f, 1.0f,
+        -1.0f, 0.0f, -1.0f,   0.0f,  1.0f, 0.0f,   0.0f, 0.0f,
+         1.0f, 0.0f, -1.0f,   0.0f,  1.0f, 0.0f,   1.0f, 0.0f,
+         1.0f, 0.0f,  1.0f,   0.0f,  1.0f, 0.0f,   1.0f, 1.0f,
+        -1.0f, 0.0f,  1.0f,   0.0f,  1.0f, 0.0f,   0.0f, 1.0f,
     };
 
     unsigned int indices[] = {
@@ -1418,4 +1433,189 @@ GLuint createTriangularRoof()
     glEnableVertexAttribArray(2);
 
     return VAO;
+}
+
+// Add createCylinder function
+GLuint createCylinder()
+{
+    const int segments = 16;
+    const float radius = 0.5f;
+    const float height = 1.0f;
+    std::vector<float> vertices;
+    std::vector<unsigned int> indices;
+    // Generate vertices for bottom circle
+    for (int i = 0; i <= segments; i++) {
+        float angle = 2.0f * M_PI * i / segments;
+        float x = radius * cos(angle);
+        float z = radius * sin(angle);
+        // Bottom vertex
+        vertices.insert(vertices.end(), {x, -height/2.0f, z, 0.0f, -1.0f, 0.0f, (float)i/segments, 0.0f});
+        // Top vertex
+        vertices.insert(vertices.end(), {x, height/2.0f, z, 0.0f, 1.0f, 0.0f, (float)i/segments, 1.0f});
+    }
+    // Center vertices for caps
+    vertices.insert(vertices.end(), {0.0f, -height/2.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.5f, 0.5f}); // Bottom center
+    vertices.insert(vertices.end(), {0.0f, height/2.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 0.5f});  // Top center
+    int bottomCenterIndex = (segments + 1) * 2;
+    int topCenterIndex = bottomCenterIndex + 1;
+    // Generate indices for cylinder sides
+    for (int i = 0; i < segments; i++) {
+        unsigned int bottom1 = static_cast<unsigned int>(i * 2);
+        unsigned int top1 = static_cast<unsigned int>(i * 2 + 1);
+        unsigned int bottom2 = static_cast<unsigned int>(((i + 1) % (segments + 1)) * 2);
+        unsigned int top2 = static_cast<unsigned int>(((i + 1) % (segments + 1)) * 2 + 1);
+        // Side triangles
+        indices.insert(indices.end(), {bottom1, bottom2, top1});
+        indices.insert(indices.end(), {top1, bottom2, top2});
+        // Bottom cap
+        indices.insert(indices.end(), {static_cast<unsigned int>(bottomCenterIndex), bottom2, bottom1});
+        // Top cap  
+        indices.insert(indices.end(), {static_cast<unsigned int>(topCenterIndex), top1, top2});
+    }
+    GLuint VBO, VAO, EBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+    // Position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // Normal attribute
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    // Texture coordinate attribute
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    return VAO;
+}
+
+// Add renderRealisticCar function
+void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO)
+{
+    glm::mat4 model;
+
+    // Main body
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, car.position);
+    model = glm::scale(model, glm::vec3(car.width, car.height, car.length));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", car.color);
+
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // Wheels
+    float wheelRadius = car.width * 0.4f;
+    float wheelWidth = car.width * 0.2f;
+    glm::vec3 wheelColor = glm::vec3(0.2f);
+
+    // Front wheels
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, car.position + glm::vec3(-car.width / 2.0f, -car.height / 2.0f, car.length / 2.0f));
+    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", wheelColor);
+
+    glBindVertexArray(cylinderVAO);
+    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, car.position + glm::vec3(car.width / 2.0f, -car.height / 2.0f, car.length / 2.0f));
+    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", wheelColor);
+
+    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+
+    // Back wheels
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, car.position + glm::vec3(-car.width / 2.0f, -car.height / 2.0f, -car.length / 2.0f));
+    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", wheelColor);
+
+    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, car.position + glm::vec3(car.width / 2.0f, -car.height / 2.0f, -car.length / 2.0f));
+    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", wheelColor);
+
+    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+
+    // --- CAR LAMP GLOW EFFECTS ---
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    // Headlamps (front corners)
+    for (int side = -1; side <= 1; side += 2) {
+        glm::vec3 lampPos = car.position + glm::vec3(side * car.width / 2.0f, 0.0f, car.length / 2.0f + 0.2f);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lampPos);
+        model = glm::scale(model, glm::vec3(0.4f, 0.2f, 0.6f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 0.7f)); // Headlamp glow
+        glBindVertexArray(cubeVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+    // Taillamps (rear corners)
+    for (int side = -1; side <= 1; side += 2) {
+        glm::vec3 lampPos = car.position + glm::vec3(side * car.width / 2.0f, 0.0f, -car.length / 2.0f - 0.2f);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lampPos);
+        model = glm::scale(model, glm::vec3(0.3f, 0.15f, 0.4f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(1.0f, 0.1f, 0.1f)); // Taillamp glow
+        glBindVertexArray(cubeVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+    glDisable(GL_BLEND);
+}
+
+// Add renderTrees function
+void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO)
+{
+    glm::mat4 model;
+    srand(54321); // Consistent tree placement
+    std::vector<glm::vec3> treePositions = {
+        glm::vec3(-70.0f, 0.0f, -70.0f), glm::vec3(-50.0f, 0.0f, -90.0f), glm::vec3(-30.0f, 0.0f, -60.0f),
+        glm::vec3(10.0f, 0.0f, -80.0f), glm::vec3(50.0f, 0.0f, -70.0f), glm::vec3(70.0f, 0.0f, -90.0f),
+        glm::vec3(-90.0f, 0.0f, 10.0f), glm::vec3(-70.0f, 0.0f, 30.0f), glm::vec3(-60.0f, 0.0f, 50.0f),
+        glm::vec3(-80.0f, 0.0f, 70.0f), glm::vec3(-90.0f, 0.0f, 90.0f), glm::vec3(10.0f, 0.0f, 70.0f),
+        glm::vec3(30.0f, 0.0f, 90.0f), glm::vec3(70.0f, 0.0f, 10.0f), glm::vec3(90.0f, 0.0f, 30.0f),
+        glm::vec3(60.0f, 0.0f, -10.0f), glm::vec3(-10.0f, 0.0f, -50.0f), glm::vec3(-30.0f, 0.0f, -10.0f),
+        glm::vec3(-70.0f, 0.0f, -30.0f), glm::vec3(-10.0f, 0.0f, 10.0f), glm::vec3(-50.0f, 0.0f, 30.0f)
+    };
+    for (const auto& pos : treePositions) {
+        // Randomize trunk and foliage size
+        float trunkHeight = 2.5f + (rand() % 5) * 0.5f; // 2.5-5m
+        float trunkWidth = 0.3f + (rand() % 3) * 0.1f;  // 0.3-0.5m
+        float foliageSize = 1.2f + (rand() % 5) * 0.4f; // 1.2-3.2m
+        // Trunk
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, pos + glm::vec3(0.0f, trunkHeight / 2.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(trunkWidth, trunkHeight, trunkWidth));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.55f, 0.27f, 0.07f)); // Brown trunk
+        glBindVertexArray(cylinderVAO);
+        glDrawElements(GL_TRIANGLES, 96, GL_UNSIGNED_INT, 0);
+        // Foliage: 2-3 layers
+        int layers = 2 + rand() % 2;
+        for (int i = 0; i < layers; ++i) {
+            float layerHeight = trunkHeight + 0.5f + i * (foliageSize * 0.5f);
+            float layerSize = foliageSize * (1.0f - i * 0.2f);
+            float greenShade = 0.6f + (rand() % 4) * 0.1f;
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, pos + glm::vec3(0.0f, layerHeight, 0.0f));
+            model = glm::scale(model, glm::vec3(layerSize, layerSize, layerSize));
+            shader.SetMat4("model", model);
+            shader.SetVec3("objectColor", glm::vec3(0.1f, greenShade, 0.1f));
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+    }
 }
