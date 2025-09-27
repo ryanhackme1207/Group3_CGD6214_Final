@@ -13,65 +13,119 @@ struct Material {
     float shininess;
 };
 
-// Light properties
-struct Light {
+// Point light properties
+struct PointLight {
     vec3 position;
     vec3 color;
     float intensity;
-    
-    // Attenuation
+    float constant;
+    float linear;
+    float quadratic;
+};
+
+// Spot light properties
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    float innerCutoff; // cos(angle)
+    float outerCutoff; // cos(angle)
     float constant;
     float linear;
     float quadratic;
 };
 
 uniform Material material;
-uniform Light light;
-uniform vec3 viewPos;
-uniform vec3 objectColor;
+uniform PointLight pointLights[64];
+uniform int numPointLights;
+uniform SpotLight spotLights[16];
+uniform int numSpotLights;
+uniform vec3 ambientColor; // global ambient
 
 // Simple lighting uniforms (for backward compatibility)
 uniform vec3 lightPos;
 uniform vec3 lightColor;
+uniform vec3 viewPos;
+uniform vec3 objectColor;
 
 void main()
 {
-    // Use either struct-based lighting or simple lighting
-    vec3 lightPosition = length(light.position) > 0.1 ? light.position : lightPos;
-    vec3 lightCol = length(light.color) > 0.1 ? light.color * light.intensity : lightColor;
-    
-    // Ambient
-    float ambientStrength = 0.15;
-    vec3 ambient = ambientStrength * lightCol;
-    
-    // Diffuse
     vec3 norm = normalize(Normal);
-    vec3 lightDir = normalize(lightPosition - FragPos);
-    float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * lightCol;
-    
-    // Specular
-    float specularStrength = 0.6;
     vec3 viewDir = normalize(viewPos - FragPos);
-    vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
-    vec3 specular = specularStrength * spec * lightCol;
-    
-    // Attenuation (distance-based lighting falloff)
-    float distance = length(lightPosition - FragPos);
-    float attenuation = 1.0 / (1.0 + 0.014 * distance + 0.0007 * (distance * distance));
-    
-    // Apply attenuation to diffuse and specular
-    diffuse *= attenuation;
-    specular *= attenuation;
-    
-    // Combine results
-    vec3 result = (ambient + diffuse + specular) * objectColor;
-    
-    // Add slight fog effect for distant objects
-    float fogDistance = distance / 50.0;
-    float fogFactor = exp(-fogDistance * fogDistance * 0.1);
-    result = mix(vec3(0.1, 0.1, 0.15), result, fogFactor);
-    
-    FragColor = vec4(result, 1.0);
+
+    // Start with global ambient
+    vec3 result = ambientColor * objectColor * 0.15;
+
+    // If simple single light is provided, use it as a directional-like source
+    if (length(lightColor) > 0.001) {
+        vec3 lightDir = normalize(lightPos - FragPos);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * lightColor;
+
+        float specularStrength = 0.6;
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
+        vec3 specular = specularStrength * spec * lightColor;
+
+        result += (diffuse + specular) * objectColor;
+    }
+
+    // Add contributions from point lights
+    for (int i = 0; i < numPointLights; ++i) {
+        PointLight pl = pointLights[i];
+        vec3 lightDir = normalize(pl.position - FragPos);
+        float diff = max(dot(norm, lightDir), 0.0);
+        // Specular
+        float specularStrength = 0.6;
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
+        vec3 specular = specularStrength * spec * pl.color * pl.intensity;
+        // Attenuation
+        float distance = length(pl.position - FragPos);
+        float attenuation = 1.0 / (pl.constant + pl.linear * distance + pl.quadratic * distance * distance);
+        vec3 diffuse = diff * pl.color * pl.intensity;
+        diffuse *= attenuation;
+        specular *= attenuation;
+        // Ambient from this point light (very small)
+        vec3 ambient = 0.05 * pl.color * pl.intensity * attenuation;
+        result += (ambient + diffuse + specular) * objectColor;
+    }
+
+    // Add contributions from spotlights
+    for (int i = 0; i < numSpotLights; ++i) {
+        SpotLight sl = spotLights[i];
+        vec3 lightDir = normalize(sl.position - FragPos);
+        float diff = max(dot(norm, lightDir), 0.0);
+
+        // Attenuation
+        float distance = length(sl.position - FragPos);
+        float attenuation = 1.0 / (sl.constant + sl.linear * distance + sl.quadratic * distance * distance);
+
+        // Spotlight intensity (soft edges)
+        vec3 spotDir = normalize(-sl.direction); // direction the spotlight points toward
+        float theta = dot(lightDir, spotDir);
+        float epsilon = sl.innerCutoff - sl.outerCutoff;
+        float intensity = clamp((theta - sl.outerCutoff) / max(epsilon, 0.001), 0.0, 1.0);
+
+        // Specular
+        float specularStrength = 0.6;
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
+        vec3 specular = specularStrength * spec * sl.color * sl.intensity * intensity;
+
+        vec3 diffuse = diff * sl.color * sl.intensity * intensity;
+        diffuse *= attenuation;
+        specular *= attenuation;
+        vec3 ambient = 0.03 * sl.color * sl.intensity * attenuation;
+
+        result += (ambient + diffuse + specular) * objectColor;
+    }
+
+    // Slight fog for distance
+    float distanceToCamera = length(viewPos - FragPos);
+    float fogFactor = exp(-pow(distanceToCamera / 200.0, 2.0));
+    vec3 finalColor = mix(vec3(0.05, 0.05, 0.08), result, fogFactor);
+
+    FragColor = vec4(finalColor, 1.0);
 }

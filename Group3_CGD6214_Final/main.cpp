@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+using namespace glm;
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -49,9 +50,44 @@ out vec4 FragColor;
 in vec3 TexCoords;
 
 uniform samplerCube skybox;
+uniform float timeOfDay;  
+uniform float skyIntensity;  
 
 void main() {
-    FragColor = texture(skybox, TexCoords);
+    vec4 texColor = texture(skybox, TexCoords);
+    
+    // Calculate darkness factor based on time of day
+    float darknessFactor = 1.0;
+    
+    // Make sky darker during night (6pm - 6am)
+    if (timeOfDay < 6.0 || timeOfDay > 18.0) {
+        // At night, significantly reduce brightness (0.15 = very dark)
+        darknessFactor = 0.15;
+        
+        // Add slightly more blue tint at night
+        texColor.rgb = mix(texColor.rgb, vec3(0.1, 0.1, 0.2), 0.3);
+    } else {
+        // During day, use smooth transition based on time
+        float dayProgress = (timeOfDay - 6.0) / 12.0;
+        // Sine wave for smooth transition, adjusted for more contrast
+        darknessFactor = 0.15 + (0.85 * skyIntensity * sin(dayProgress * 3.14159));
+        
+        // Add slight color adjustments for dawn/dusk
+        if (timeOfDay < 8.0) { // Dawn
+            texColor.rgb = mix(texColor.rgb, vec3(0.8, 0.6, 0.4), 0.2);
+        } else if (timeOfDay > 16.0) { // Dusk
+            texColor.rgb = mix(texColor.rgb, vec3(0.8, 0.5, 0.3), 0.2);
+        }
+    }
+    
+    // Apply darkness and slight desaturation at night
+    vec3 finalColor = texColor.rgb * darknessFactor;
+    if (timeOfDay < 6.0 || timeOfDay > 18.0) {
+        float luminance = dot(finalColor, vec3(0.299, 0.587, 0.114));
+        finalColor = mix(finalColor, vec3(luminance), 0.2); // Slight desaturation at night
+    }
+    
+    FragColor = vec4(finalColor, texColor.a);
 }
 )";
 
@@ -350,6 +386,7 @@ int main()
     std::cout << "=======================" << std::endl;
 
     // Render loop
+    glm::mat4 model;
     while (!glfwWindowShouldClose(window))
     {
         // Per-frame time logic
@@ -384,13 +421,15 @@ int main()
         if (timeOfDay >= 6.0f && timeOfDay <= 18.0f) {
             float dayProgress = (timeOfDay - 6.0f) / 12.0f;
             skyIntensity = 0.6f + 0.2f * sin(dayProgress * M_PI);
+            glClearColor(0.6f * skyIntensity, 0.8f * skyIntensity, 1.0f * skyIntensity, 1.0f); // Sky blue background
         }
         else {
             skyIntensity = 0.1f;
+            // Night: dark blue/black sky
+            glClearColor(0.05f, 0.07f, 0.13f, 1.0f);
         }
 
         // Render
-        glClearColor(0.6f * skyIntensity, 0.8f * skyIntensity, 1.0f * skyIntensity, 1.0f); // Sky blue background
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         buildingShader.Use();
@@ -422,18 +461,23 @@ int main()
 
             if (timeOfDay >= 6.0f && timeOfDay <= 18.0f) {
                 float noonFactor = 1.0f - abs(timeOfDay - 12.0f) / 6.0f;
-                lightIntensity = 0.7f + 0.3f * noonFactor;
-
+                lightIntensity = (0.7f + 0.3f * noonFactor) * 1.5f; // Increased sun strength
+                float morningBoost = 1.0f;
                 if (timeOfDay < 10.0f) {
-                    lightColor = glm::vec3(1.0f, 0.9f, 0.7f) * lightIntensity;
+                    morningBoost = 1.25f - 0.05f * (10.0f - timeOfDay); // 1.25 at 6am, 1.05 at 10am
+                }
+                if (timeOfDay < 10.0f) {
+                    lightColor = glm::vec3(1.0f, 0.93f, 0.8f) * lightIntensity * morningBoost;
+                    ambientColor = glm::vec3(0.38f, 0.45f, 0.55f) * lightIntensity * 0.38f * morningBoost;
                 }
                 else if (timeOfDay > 14.0f) {
                     lightColor = glm::vec3(1.0f, 0.8f, 0.6f) * lightIntensity;
+                    ambientColor = glm::vec3(0.3f, 0.4f, 0.5f) * lightIntensity * 0.3f;
                 }
                 else {
                     lightColor = glm::vec3(1.0f, 0.95f, 0.9f) * lightIntensity;
+                    ambientColor = glm::vec3(0.3f, 0.4f, 0.5f) * lightIntensity * 0.3f;
                 }
-                ambientColor = glm::vec3(0.3f, 0.4f, 0.5f) * lightIntensity * 0.3f;
             }
             else {
                 float nightIntensity = 0.1f + 0.05f * (1.0f - abs(timeOfDay - 0.0f) / 6.0f);
@@ -455,21 +499,107 @@ int main()
             buildingShader.SetVec3("lightDir", -glm::normalize(sunPosition));
             buildingShader.SetVec3("lightColor", lightColor);
             buildingShader.SetVec3("ambientColor", ambientColor);
+
+            // Setup street lamp point lights (they turn on at night)
+            // Compute a lightScale based on skyIntensity so lights fade in at dusk
+            float lightScale = glm::clamp(1.0f - (skyIntensity - 0.1f) / 0.7f, 0.0f, 1.0f);
+
+            std::vector<glm::vec3> pointPositions;
+            std::vector<glm::vec3> pointColors;
+            std::vector<float> pointIntensities;
+
+            // East-West street lights
+            for (int i = -120; i <= 120; i += 30) {
+                for (int side = -1; side <= 1; side += 2) {
+                    float zPos = side * 15.0f;
+                    pointPositions.emplace_back(glm::vec3(i, 9.5f, zPos));
+                    pointColors.emplace_back(glm::vec3(1.0f, 0.95f, 0.8f));
+                    pointIntensities.emplace_back(4.0f * lightScale);
+                }
+            }
+            // North-South street lights
+            for (int i = -120; i <= 120; i += 30) {
+                if (i >= -15 && i <= 15) continue;
+                for (int side = -1; side <= 1; side += 2) {
+                    float xPos = side * 15.0f;
+                    pointPositions.emplace_back(glm::vec3(xPos, 9.5f, i));
+                    pointColors.emplace_back(glm::vec3(1.0f, 0.95f, 0.8f));
+                    pointIntensities.emplace_back(4.0f * lightScale);
+                }
+            }
+
+            int numPL = (int)pointPositions.size();
+            buildingShader.SetInt("numPointLights", numPL);
+            for (int i = 0; i < numPL; ++i) {
+                std::string base = "pointLights[" + std::to_string(i) + "]";
+                buildingShader.SetVec3(base + ".position", pointPositions[i]);
+                buildingShader.SetVec3(base + ".color", pointColors[i]);
+                buildingShader.SetFloat(base + ".intensity", pointIntensities[i]);
+                buildingShader.SetFloat(base + ".constant", 1.0f);
+                buildingShader.SetFloat(base + ".linear", 0.09f);
+                buildingShader.SetFloat(base + ".quadratic", 0.032f);
+            }
+
+            // Setup spotlights on tall buildings (KL Tower, Eiffel Tower)
+            std::vector<glm::vec3> spotPositions;
+            std::vector<glm::vec3> spotDirections;
+            std::vector<glm::vec3> spotColors;
+            std::vector<float> spotIntensities;
+            std::vector<float> spotInner; 
+            std::vector<float> spotOuter;
+
+            // KL Tower spotlight (points downward)
+            glm::vec3 klPos = glm::vec3(25.0f, 421.0f + 30.0f, 25.0f);
+            spotPositions.push_back(klPos);
+            spotDirections.push_back(glm::vec3(0.0f, -1.0f, 0.0f));
+            spotColors.push_back(glm::vec3(1.0f, 0.98f, 0.9f));
+            spotIntensities.push_back(8.0f * lightScale);
+            spotInner.push_back(cos(glm::radians(12.5f)));
+            spotOuter.push_back(cos(glm::radians(20.0f)));
+
+            // Eiffel Tower spotlight (small angled downward spotlight)
+            glm::vec3 eiffPos = glm::vec3(-30.0f, 315.0f + 15.0f, -30.0f);
+            spotPositions.push_back(eiffPos);
+            spotDirections.push_back(glm::normalize(glm::vec3(0.1f, -1.0f, 0.05f)));
+            spotColors.push_back(glm::vec3(1.0f, 0.95f, 0.9f));
+            spotIntensities.push_back(6.0f * lightScale);
+            spotInner.push_back(cos(glm::radians(10.0f)));
+            spotOuter.push_back(cos(glm::radians(18.0f)));
+
+            int numSL = (int)spotPositions.size();
+            buildingShader.SetInt("numSpotLights", numSL);
+            for (int i = 0; i < numSL; ++i) {
+                std::string base = "spotLights[" + std::to_string(i) + "]";
+                buildingShader.SetVec3(base + ".position", spotPositions[i]);
+                buildingShader.SetVec3(base + ".direction", spotDirections[i]);
+                buildingShader.SetVec3(base + ".color", spotColors[i]);
+                buildingShader.SetFloat(base + ".intensity", spotIntensities[i]);
+                buildingShader.SetFloat(base + ".innerCutoff", spotInner[i]);
+                buildingShader.SetFloat(base + ".outerCutoff", spotOuter[i]);
+                buildingShader.SetFloat(base + ".constant", 1.0f);
+                buildingShader.SetFloat(base + ".linear", 0.09f);
+                buildingShader.SetFloat(base + ".quadratic", 0.032f);
+            }
         }
         else {
             // Point light
             buildingShader.SetVec3("lightPos", glm::vec3(50.0f, 80.0f, 50.0f));
             buildingShader.SetVec3("lightColor", glm::vec3(1.0f, 0.95f, 0.8f)); // Warm sunlight
             buildingShader.SetVec3("ambientColor", glm::vec3(0.2f, 0.2f, 0.3f));
+
+            // If using point-light mode, also set zero point lights and spotlights arrays
+            buildingShader.SetInt("numPointLights", 0);
+            buildingShader.SetInt("numSpotLights", 0);
         }
         buildingShader.SetVec3("viewPos", camera.GetPosition());
 
         // Render ground (grass/concrete)
-        glm::mat4 model = glm::mat4(1.0f);
+        glm::vec3 groundColor = glm::vec3(0.4f, 0.6f, 0.3f);  // Grass green
+        if (timeOfDay >= 6.0f && timeOfDay < 10.0f) groundColor = glm::vec3(0.52f, 0.75f, 0.45f); // Brighter in morning
+        model = glm::mat4(1.0f);
         model = glm::scale(model, glm::vec3(250.0f, 1.0f, 250.0f));
         buildingShader.SetMat4("model", model);
-        buildingShader.SetVec3("objectColor", glm::vec3(0.4f, 0.6f, 0.3f));  // Grass green
-
+        buildingShader.SetVec3("objectColor", groundColor);
         glBindVertexArray(groundVAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
@@ -479,9 +609,10 @@ int main()
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(x, 0.02f, 0.0f));
             model = glm::scale(model, glm::vec3(5.0f, 0.04f, 25.0f));  // 25m wide highway
+            glm::vec3 roadColor = glm::vec3(0.25f, 0.25f, 0.25f);
+            if (timeOfDay >= 6.0f && timeOfDay < 10.0f) roadColor = glm::vec3(0.38f, 0.38f, 0.38f); // Brighter in morning
             buildingShader.SetMat4("model", model);
-            buildingShader.SetVec3("objectColor", glm::vec3(0.25f, 0.25f, 0.25f));  // Dark asphalt
-
+            buildingShader.SetVec3("objectColor", roadColor);
             glBindVertexArray(cubeVAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
@@ -526,9 +657,10 @@ int main()
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(0.0f, 0.02f, z));
             model = glm::scale(model, glm::vec3(25.0f, 0.04f, 5.0f));  // 25m wide highway
+            glm::vec3 roadColor = glm::vec3(0.25f, 0.25f, 0.25f);
+            if (timeOfDay >= 6.0f && timeOfDay < 10.0f) roadColor = glm::vec3(0.38f, 0.38f, 0.38f);
             buildingShader.SetMat4("model", model);
-            buildingShader.SetVec3("objectColor", glm::vec3(0.25f, 0.25f, 0.25f));
-
+            buildingShader.SetVec3("objectColor", roadColor);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
@@ -645,6 +777,21 @@ int main()
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
+        // KL Tower top glow (night only)
+        if (skyIntensity < 0.25f) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            float glowAlpha = glm::clamp(1.0f - skyIntensity * 4.0f, 0.0f, 1.0f);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(25.0f, 421.0f + 30.0f, 25.0f));
+            model = glm::scale(model, glm::vec3(16.0f, 12.0f, 16.0f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(1.0f, 0.98f, 0.8f) * glowAlpha);
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glDisable(GL_BLEND);
+        }
+
         // Eiffel Tower (Paris Tower) - 330m tall
         // Tower base (wider at bottom)
         model = glm::mat4(1.0f);
@@ -681,6 +828,21 @@ int main()
         buildingShader.SetVec3("objectColor", glm::vec3(0.5f, 0.4f, 0.3f));
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Eiffel Tower top glow (night only)
+        if (skyIntensity < 0.25f) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            float glowAlpha = glm::clamp(1.0f - skyIntensity * 4.0f, 0.0f, 1.0f);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-30.0f, 315.0f + 15.0f, -30.0f));
+            model = glm::scale(model, glm::vec3(12.0f, 10.0f, 12.0f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(1.0f, 0.98f, 0.8f) * glowAlpha);
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glDisable(GL_BLEND);
+        }
 
         // Create realistic residential neighborhoods
         for (int x = -80; x <= 80; x += 20)  // Wider spacing for realistic lots
@@ -936,6 +1098,10 @@ int main()
 
         glUniformMatrix4fv(glGetUniformLocation(skyboxShader, "view"), 1, GL_FALSE, glm::value_ptr(skyboxView));
         glUniformMatrix4fv(glGetUniformLocation(skyboxShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        
+        // Pass time of day and sky intensity to skybox shader
+        glUniform1f(glGetUniformLocation(skyboxShader, "timeOfDay"), timeOfDay);
+        glUniform1f(glGetUniformLocation(skyboxShader, "skyIntensity"), skyIntensity);
 
         glBindVertexArray(skyboxVAO);
         glActiveTexture(GL_TEXTURE0);
@@ -1679,13 +1845,27 @@ void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO)
     glm::mat4 model;
     srand(54321); // Consistent tree placement
     std::vector<glm::vec3> treePositions = {
-        glm::vec3(-70.0f, 0.0f, -70.0f), glm::vec3(-50.0f, 0.0f, -90.0f), glm::vec3(-30.0f, 0.0f, -60.0f),
-        glm::vec3(10.0f, 0.0f, -80.0f), glm::vec3(50.0f, 0.0f, -70.0f), glm::vec3(70.0f, 0.0f, -90.0f),
-        glm::vec3(-90.0f, 0.0f, 10.0f), glm::vec3(-70.0f, 0.0f, 30.0f), glm::vec3(-60.0f, 0.0f, 50.0f),
-        glm::vec3(-80.0f, 0.0f, 70.0f), glm::vec3(-90.0f, 0.0f, 90.0f), glm::vec3(10.0f, 0.0f, 70.0f),
-        glm::vec3(30.0f, 0.0f, 90.0f), glm::vec3(70.0f, 0.0f, 10.0f), glm::vec3(90.0f, 0.0f, 30.0f),
-        glm::vec3(60.0f, 0.0f, -10.0f), glm::vec3(-10.0f, 0.0f, -50.0f), glm::vec3(-30.0f, 0.0f, -10.0f),
-        glm::vec3(-70.0f, 0.0f, -30.0f), glm::vec3(-10.0f, 0.0f, 10.0f), glm::vec3(-50.0f, 0.0f, 30.0f)
+        glm::vec3(-70.0f, 0.0f, -70.0f),  // Highway entrance signs
+        glm::vec3(-50.0f, 0.0f, -90.0f),
+        glm::vec3(-30.0f, 0.0f, -60.0f),
+        glm::vec3(10.0f, 0.0f, -80.0f), 
+        glm::vec3(50.0f, 0.0f, -70.0f), 
+        glm::vec3(70.0f, 0.0f, -90.0f),
+        glm::vec3(-90.0f, 0.0f, 10.0f),
+        glm::vec3(-70.0f, 0.0f, 30.0f),
+        glm::vec3(-60.0f, 0.0f, 50.0f),
+        glm::vec3(-80.0f, 0.0f, 70.0f),
+        glm::vec3(-90.0f, 0.0f, 90.0f),
+        glm::vec3(10.0f, 0.0f, 70.0f),
+        glm::vec3(30.0f, 0.0f, 90.0f),
+        glm::vec3(70.0f, 0.0f, 10.0f),
+        glm::vec3(90.0f, 0.0f, 30.0f),
+        glm::vec3(60.0f, 0.0f, -10.0f),
+        glm::vec3(-10.0f, 0.0f, -50.0f),
+        glm::vec3(-30.0f, 0.0f, -10.0f),
+        glm::vec3(-70.0f, 0.0f, -30.0f),
+        glm::vec3(-10.0f, 0.0f, 10.0f),
+        glm::vec3(-50.0f, 0.0f, 30.0f)
     };
     for (const auto& pos : treePositions) {
         // Randomize trunk and foliage size
