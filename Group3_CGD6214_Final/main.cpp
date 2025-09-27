@@ -58,6 +58,29 @@ float lastFrame = 0.0f;
 // Camera mode switching
 bool cameraKeyPressed = false;
 
+// Car structure for moving vehicles
+struct Car {
+    glm::vec3 position;
+    glm::vec3 direction;
+    glm::vec3 color;
+    float speed;
+    float width;
+    float height;
+    float length;
+    int lane;  // 0 = right lane, 1 = left lane
+    int roadType; // 0 = main road X, 1 = main road Z, 2 = highway X, 3 = highway Z
+
+    Car(glm::vec3 pos, glm::vec3 dir, glm::vec3 col, float spd, int ln, int rt)
+        : position(pos), direction(dir), color(col), speed(spd), lane(ln), roadType(rt) {
+        width = 1.8f + (rand() % 3) * 0.2f;   // 1.8-2.2m wide
+        height = 1.4f + (rand() % 2) * 0.3f;  // 1.4-1.7m tall  
+        length = 4.0f + (rand() % 3) * 0.5f;  // 4.0-5.0m long
+    }
+};
+
+std::vector<Car> cars;
+float carSpawnTimer = 0.0f;
+
 // Function prototypes
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -66,6 +89,9 @@ void processInput(GLFWwindow* window);
 GLuint createCube();
 GLuint createGround();
 GLuint createTriangularRoof();
+void updateCars(float deltaTime);
+void spawnCar();
+void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime);
 
 // Vertax (skybox)
 float skyboxVertices[] = {
@@ -301,6 +327,14 @@ int main()
         // Input
         processInput(window);
 
+        // Update cars
+        carSpawnTimer += deltaTime;
+        if (carSpawnTimer > 1.5f) {  // Spawn a car every 1.5 seconds for more traffic
+            spawnCar();
+            carSpawnTimer = 0.0f;
+        }
+        updateCars(deltaTime);
+
         // Update camera
         camera.UpdateSmoothMovement(deltaTime);
         camera.UpdateOrbitalCamera(deltaTime);
@@ -325,12 +359,158 @@ int main()
 
         // Render ground (grass/concrete)
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::scale(model, glm::vec3(200.0f, 1.0f, 200.0f));
+        model = glm::scale(model, glm::vec3(250.0f, 1.0f, 250.0f));
         buildingShader.SetMat4("model", model);
         buildingShader.SetVec3("objectColor", glm::vec3(0.4f, 0.6f, 0.3f));  // Grass green
 
         glBindVertexArray(groundVAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        // === RENDER HIGHWAY SYSTEM ===
+        // Main East-West Highway (25m wide total)
+        for (int x = -120; x <= 120; x += 5) {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, 0.02f, 0.0f));
+            model = glm::scale(model, glm::vec3(5.0f, 0.04f, 25.0f));  // 25m wide highway
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.25f, 0.25f, 0.25f));  // Dark asphalt
+
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // East-West Highway lane markings (white dashed lines)
+        for (int x = -120; x <= 120; x += 8) {  // Dashed line pattern
+            // Right lane marking
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, 0.06f, -3.0f));
+            model = glm::scale(model, glm::vec3(4.0f, 0.02f, 0.2f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.9f));  // White
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Left lane marking
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, 0.06f, 3.0f));
+            model = glm::scale(model, glm::vec3(4.0f, 0.02f, 0.2f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.9f));
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // Highway center divider (solid yellow line)
+        for (int x = -120; x <= 120; x += 2) {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, 0.07f, 0.0f));
+            model = glm::scale(model, glm::vec3(2.0f, 0.02f, 0.3f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.1f));  // Yellow divider
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // North-South Highway (25m wide total)  
+        for (int z = -120; z <= 120; z += 5) {
+            // Skip intersection area to avoid overlapping
+            if (z >= -15 && z <= 15) continue;
+
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.0f, 0.02f, z));
+            model = glm::scale(model, glm::vec3(25.0f, 0.04f, 5.0f));  // 25m wide highway
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.25f, 0.25f, 0.25f));
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // North-South Highway lane markings
+        for (int z = -120; z <= 120; z += 8) {
+            if (z >= -15 && z <= 15) continue;  // Skip intersection
+
+            // Right lane marking
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(3.0f, 0.06f, z));
+            model = glm::scale(model, glm::vec3(0.2f, 0.02f, 4.0f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.9f));
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Left lane marking
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-3.0f, 0.06f, z));
+            model = glm::scale(model, glm::vec3(0.2f, 0.02f, 4.0f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.9f));
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // North-South Highway center divider
+        for (int z = -120; z <= 120; z += 2) {
+            if (z >= -15 && z <= 15) continue;
+
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.0f, 0.07f, z));
+            model = glm::scale(model, glm::vec3(0.3f, 0.02f, 2.0f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.1f));
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // Highway intersection (full coverage)
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.02f, 0.0f));
+        model = glm::scale(model, glm::vec3(25.0f, 0.04f, 25.0f));
+        buildingShader.SetMat4("model", model);
+        buildingShader.SetVec3("objectColor", glm::vec3(0.25f, 0.25f, 0.25f));
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // === RENDER ROAD INFRASTRUCTURE ===
+        renderRoadInfrastructure(buildingShader, cubeVAO, glfwGetTime());
+
+        // === RENDER MOVING CARS ===
+        for (const auto& car : cars) {
+            // Main car body
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, car.position);
+            model = glm::scale(model, glm::vec3(car.width, car.height, car.length));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", car.color);
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Car windows (darker, positioned on top)
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(car.position.x, car.position.y + car.height * 0.25f, car.position.z));
+            model = glm::scale(model, glm::vec3(car.width * 0.8f, car.height * 0.4f, car.length * 0.6f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.15f, 0.15f, 0.25f));  // Dark blue windows
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Car headlights/taillights based on direction
+            glm::vec3 lightColor = glm::vec3(0.9f, 0.9f, 0.8f);  // Default white headlights
+            if (car.direction.x < 0 || car.direction.z < 0) {
+                lightColor = glm::vec3(0.9f, 0.1f, 0.1f);  // Red taillights for cars going opposite direction
+            }
+
+            // Front/rear lights
+            float lightOffsetZ = car.length * 0.4f;
+            if (car.direction.x < 0 || car.direction.z < 0) lightOffsetZ *= -1;  // Taillights on back
+
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(car.position.x, car.position.y, car.position.z + lightOffsetZ));
+            model = glm::scale(model, glm::vec3(car.width * 0.6f, car.height * 0.2f, 0.1f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", lightColor);
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
 
         // Realistic building colors
         glm::vec3 houseColors[] = {
@@ -888,6 +1068,254 @@ GLuint createCube()
     glEnableVertexAttribArray(2);
 
     return VAO;
+}
+
+// Update car positions and handle traffic flow
+void updateCars(float deltaTime) {
+    for (auto it = cars.begin(); it != cars.end();) {
+        Car& car = *it;
+
+        // Move car forward
+        car.position += car.direction * car.speed * deltaTime;
+
+        // Remove cars that are too far away
+        if (abs(car.position.x) > 150.0f || abs(car.position.z) > 150.0f) {
+            it = cars.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+// Spawn new cars at road entrances
+void spawnCar() {
+    if (cars.size() >= 50) return;  // Limit number of cars
+
+    glm::vec3 carColors[] = {
+        glm::vec3(0.8f, 0.1f, 0.1f),   // Red
+        glm::vec3(0.1f, 0.1f, 0.8f),   // Blue  
+        glm::vec3(0.1f, 0.6f, 0.1f),   // Green
+        glm::vec3(0.9f, 0.9f, 0.1f),   // Yellow
+        glm::vec3(0.8f, 0.8f, 0.8f),   // Silver
+        glm::vec3(0.2f, 0.2f, 0.2f),   // Dark gray
+        glm::vec3(0.6f, 0.3f, 0.1f),   // Brown
+        glm::vec3(0.9f, 0.9f, 0.9f)    // White
+    };
+
+    int colorIndex = rand() % 8;
+    int roadType = rand() % 2;  // Focus on main highways (0 = East-West, 1 = North-South)
+    int lane = rand() % 2;      // Choose lane (0 = right lane, 1 = left lane)
+    float speed = 20.0f + (rand() % 8) * 3.0f;  // 20-41 units/second
+
+    glm::vec3 position, direction;
+
+    switch (roadType) {
+    case 0: // East-West Highway
+        if (lane == 0) {  // Right lane (going East/positive X)
+            position = glm::vec3(-120.0f, 0.8f, -6.0f);  // Right lane position
+            direction = glm::vec3(1.0f, 0.0f, 0.0f);
+        }
+        else {  // Left lane (going West/negative X)
+            position = glm::vec3(120.0f, 0.8f, 6.0f);   // Left lane position
+            direction = glm::vec3(-1.0f, 0.0f, 0.0f);
+        }
+        break;
+
+    case 1: // North-South Highway
+        if (lane == 0) {  // Right lane (going North/positive Z)
+            position = glm::vec3(6.0f, 0.8f, -120.0f);   // Right lane position
+            direction = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+        else {  // Left lane (going South/negative Z)
+            position = glm::vec3(-6.0f, 0.8f, 120.0f);  // Left lane position
+            direction = glm::vec3(0.0f, 0.0f, -1.0f);
+        }
+        break;
+    }
+
+    cars.emplace_back(position, direction, carColors[colorIndex], speed, lane, roadType);
+}
+
+// Render road infrastructure (signs, lights, barriers)
+void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime) {
+    glm::mat4 model;
+
+    // === STREET LIGHTS ===
+    // Highway street lights
+    for (int i = -120; i <= 120; i += 30) {  // Every 30 units
+        // Light poles on highway
+        for (int side = -1; side <= 1; side += 2) {  // Both sides
+            float zPos = side * 15.0f;  // 15 units from road center
+
+            // Light pole
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(i, 5.0f, zPos));
+            model = glm::scale(model, glm::vec3(0.3f, 10.0f, 0.3f));
+            shader.SetMat4("model", model);
+            shader.SetVec3("objectColor", glm::vec3(0.4f, 0.4f, 0.4f));  // Gray pole
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Light fixture (with animated brightness)
+            float brightness = 0.8f + 0.2f * sin(currentTime * 0.5f + i * 0.1f);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(i, 9.5f, zPos));
+            model = glm::scale(model, glm::vec3(1.0f, 0.8f, 1.0f));
+            shader.SetMat4("model", model);
+            shader.SetVec3("objectColor", glm::vec3(brightness, brightness, 0.9f));  // Cool light
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+    }
+
+    // Street lights on North-South highway
+    for (int i = -120; i <= 120; i += 30) {
+        if (i >= -15 && i <= 15) continue;  // Skip intersection
+
+        for (int side = -1; side <= 1; side += 2) {
+            float xPos = side * 15.0f;
+
+            // Light pole
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(xPos, 5.0f, i));
+            model = glm::scale(model, glm::vec3(0.3f, 10.0f, 0.3f));
+            shader.SetMat4("model", model);
+            shader.SetVec3("objectColor", glm::vec3(0.4f, 0.4f, 0.4f));
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Light fixture
+            float brightness = 0.8f + 0.2f * sin(currentTime * 0.5f + i * 0.1f);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(xPos, 9.5f, i));
+            model = glm::scale(model, glm::vec3(1.0f, 0.8f, 1.0f));
+            shader.SetMat4("model", model);
+            shader.SetVec3("objectColor", glm::vec3(brightness, brightness, 0.9f));
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+    }
+
+    // === ROAD SIGNS ===
+    // Highway signs
+    std::vector<glm::vec3> signPositions = {
+        glm::vec3(-90.0f, 0.0f, -18.0f),  // Highway entrance signs
+        glm::vec3(90.0f, 0.0f, 18.0f),
+        glm::vec3(-18.0f, 0.0f, -90.0f),
+        glm::vec3(18.0f, 0.0f, 90.0f),
+        glm::vec3(-60.0f, 0.0f, -18.0f),  // Distance signs
+        glm::vec3(60.0f, 0.0f, 18.0f),
+    };
+
+    for (const auto& signPos : signPositions) {
+        // Sign post
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(signPos.x, 2.5f, signPos.z));
+        model = glm::scale(model, glm::vec3(0.2f, 5.0f, 0.2f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.5f, 0.5f, 0.5f));  // Metal post
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Sign board (green highway sign)
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(signPos.x, 4.0f, signPos.z));
+        model = glm::scale(model, glm::vec3(4.0f, 1.5f, 0.1f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.1f, 0.6f, 0.1f));  // Highway green
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Sign text area (white)
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(signPos.x, 4.0f, signPos.z + 0.05f));
+        model = glm::scale(model, glm::vec3(3.5f, 1.0f, 0.02f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.9f));  // White text area
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    // === HIGHWAY BARRIERS ===
+    // Central barriers on highways
+    for (int i = -120; i <= 120; i += 3) {
+        // Skip intersection area
+        if (i >= -20 && i <= 20) continue;
+
+        // Concrete barrier on East-West highway
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(i, 0.8f, 0.0f));
+        model = glm::scale(model, glm::vec3(3.0f, 1.6f, 0.5f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.7f, 0.7f, 0.7f));  // Concrete gray
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    for (int i = -120; i <= 120; i += 3) {
+        if (i >= -20 && i <= 20) continue;
+
+        // Concrete barrier on North-South highway  
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.8f, i));
+        model = glm::scale(model, glm::vec3(0.5f, 1.6f, 3.0f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.7f, 0.7f, 0.7f));
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    // === TRAFFIC SIGNALS ===
+    // Traffic lights at major intersections
+    std::vector<glm::vec3> trafficLightPositions = {
+        glm::vec3(-20.0f, 0.0f, -20.0f),  // Four corners of main intersection
+        glm::vec3(20.0f, 0.0f, -20.0f),
+        glm::vec3(-20.0f, 0.0f, 20.0f),
+        glm::vec3(20.0f, 0.0f, 20.0f)
+    };
+
+    for (const auto& tlPos : trafficLightPositions) {
+        // Traffic light pole
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(tlPos.x, 4.0f, tlPos.z));
+        model = glm::scale(model, glm::vec3(0.3f, 8.0f, 0.3f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.3f, 0.3f, 0.3f));
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Traffic light housing
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(tlPos.x, 7.0f, tlPos.z));
+        model = glm::scale(model, glm::vec3(0.8f, 2.0f, 0.8f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.2f, 0.2f, 0.2f));
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Animated traffic lights (cycling through colors)
+        float cycle = fmod(currentTime, 9.0f);  // 9-second cycle
+        glm::vec3 lightColor;
+        if (cycle < 3.0f) {
+            lightColor = glm::vec3(0.9f, 0.1f, 0.1f);  // Red
+        }
+        else if (cycle < 4.0f) {
+            lightColor = glm::vec3(0.9f, 0.9f, 0.1f);  // Yellow
+        }
+        else {
+            lightColor = glm::vec3(0.1f, 0.9f, 0.1f);  // Green
+        }
+
+        // Active light
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(tlPos.x, 7.0f, tlPos.z + 0.5f));
+        model = glm::scale(model, glm::vec3(0.4f, 0.4f, 0.1f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", lightColor);
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
 }
 
 GLuint createGround()
