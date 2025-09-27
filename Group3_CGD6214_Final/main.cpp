@@ -115,15 +115,15 @@ struct Car {
     glm::vec3 direction;
     glm::vec3 color;
     float speed;
-    float width;
-    float height;
-    float length;
+    float width = 0.0f;
+    float height = 0.0f;
+    float length = 0.0f;
     int lane;  // 0 = right lane, 1 = left lane
     int roadType; // 0 = main road X, 1 = main road Z, 2 = highway X, 3 = highway Z
     int carType; // 0 = sedan, 1 = SUV, 2 = truck, 3 = hatchback
 
     Car(glm::vec3 pos, glm::vec3 dir, glm::vec3 col, float spd, int ln, int rt, int ct)
-        : position(pos), direction(dir), color(col), speed(spd), lane(ln), roadType(rt), carType(ct) {
+        : position(pos), direction(dir), color(col), speed(spd), lane(ln), roadType(rt), carType(ct), width(0.0f), height(0.0f), length(0.0f) {
 
         // Different dimensions based on car type
         switch (carType) {
@@ -144,6 +144,7 @@ struct Car {
 };
 
 std::vector<Car> cars;
+std::vector<Car> parkedCars; // parked cars in parking lots
 float carSpawnTimer = 0.0f;
 
 // Function prototypes
@@ -160,6 +161,7 @@ void spawnCar();
 void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime);
 void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
 void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
+void renderShoppingMallComplex(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO); // new prototype
 
 // Vertax (skybox)
 float skyboxVertices[] = {
@@ -216,16 +218,18 @@ unsigned int loadCubemap(std::vector<std::string> faces) {
     for (unsigned int i = 0; i < faces.size(); i++) {
         std::cout << "Loading cubemap texture: " << faces[i] << std::endl;
         unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+        GLenum format = GL_RGB; // Default format
         if (data) {
             std::cout << "Success! Dimensions: " << width << "x" << height << ", Channels: " << nrChannels << std::endl;
 
-            GLenum format;
             if (nrChannels == 1)
                 format = GL_RED;
             else if (nrChannels == 3)
                 format = GL_RGB;
             else if (nrChannels == 4)
                 format = GL_RGBA;
+            else
+                format = GL_RGB; // fallback
 
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);
@@ -367,6 +371,40 @@ int main()
     GLuint groundVAO = createGround();
     GLuint roofVAO = createTriangularRoof();
     GLuint cylinderVAO = createCylinder();
+
+    // Populate parked cars for the shopping mall parking lot
+    // Mall center at (60, 0, 60)
+    srand(424242); // fixed seed for consistent parked car placement
+    glm::vec3 mallCenter = glm::vec3(60.0f, 0.0f, 60.0f);
+    int rows = 4;
+    int cols = 10;
+    float spacingX = 4.5f; // space between parking spaces
+    float spacingZ = 6.0f; // aisle spacing
+    float startX = mallCenter.x - (cols/2.0f - 0.5f) * spacingX;
+    float startZ = mallCenter.z - (rows/2.0f - 0.5f) * spacingZ - 30.0f; // place parking in front of mall
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            float px = startX + c * spacingX + ((rand()%100)/100.0f - 0.5f) * 0.3f;
+            float pz = startZ + r * spacingZ + ((rand()%100)/100.0f - 0.5f) * 0.3f;
+            glm::vec3 pos = glm::vec3(px, 0.85f, pz);
+            int colorIndex = rand() % 10;
+            glm::vec3 carColors[] = {
+                glm::vec3(0.1f, 0.1f, 0.1f),
+                glm::vec3(0.9f, 0.9f, 0.9f),
+                glm::vec3(0.7f, 0.7f, 0.7f),
+                glm::vec3(0.8f, 0.1f, 0.1f),
+                glm::vec3(0.1f, 0.3f, 0.8f),
+                glm::vec3(0.2f, 0.2f, 0.2f),
+                glm::vec3(0.6f, 0.3f, 0.1f),
+                glm::vec3(0.1f, 0.5f, 0.2f),
+                glm::vec3(0.8f, 0.8f, 0.1f),
+                glm::vec3(0.5f, 0.1f, 0.5f)
+            };
+            int carType = rand() % 4;
+            // parked cars have speed 0
+            parkedCars.emplace_back(pos, glm::vec3(0.0f), carColors[colorIndex], 0.0f, 0, 0, carType);
+        }
+    }
 
     // Set up camera boundaries for the larger city with tall buildings
     camera.SetBoundaries(-120.0f, 120.0f, -120.0f, 120.0f, 2.0f, 300.0f);  // Higher ceiling for tall buildings
@@ -719,6 +757,9 @@ int main()
         for (const auto& car : cars) {
             renderRealisticCar(car, buildingShader, cubeVAO, cylinderVAO);
         }
+
+        // Render shopping mall complex (shops + parking lot + parked cars)
+        renderShoppingMallComplex(buildingShader, cubeVAO, cylinderVAO);
 
         // Realistic building colors
         glm::vec3 houseColors[] = {
@@ -1596,6 +1637,11 @@ void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime)
     }
 }
 
+// Stub implementation for unresolved external symbol
+void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO) {
+    // TODO: Implement tree rendering logic
+}
+
 GLuint createGround()
 {
     // Ground vertices (a large plane)
@@ -1698,7 +1744,6 @@ GLuint createTriangularRoof()
     return VAO;
 }
 
-// Add createCylinder function
 GLuint createCylinder()
 {
     const int segments = 16;
@@ -1839,60 +1884,95 @@ void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint c
     glDisable(GL_BLEND);
 }
 
-// Add renderTrees function
-void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO)
+// Add renderShoppingMallComplex implementation
+void renderShoppingMallComplex(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO)
 {
     glm::mat4 model;
-    srand(54321); // Consistent tree placement
-    std::vector<glm::vec3> treePositions = {
-        glm::vec3(-70.0f, 0.0f, -70.0f),  // Highway entrance signs
-        glm::vec3(-50.0f, 0.0f, -90.0f),
-        glm::vec3(-30.0f, 0.0f, -60.0f),
-        glm::vec3(10.0f, 0.0f, -80.0f), 
-        glm::vec3(50.0f, 0.0f, -70.0f), 
-        glm::vec3(70.0f, 0.0f, -90.0f),
-        glm::vec3(-90.0f, 0.0f, 10.0f),
-        glm::vec3(-70.0f, 0.0f, 30.0f),
-        glm::vec3(-60.0f, 0.0f, 50.0f),
-        glm::vec3(-80.0f, 0.0f, 70.0f),
-        glm::vec3(-90.0f, 0.0f, 90.0f),
-        glm::vec3(10.0f, 0.0f, 70.0f),
-        glm::vec3(30.0f, 0.0f, 90.0f),
-        glm::vec3(70.0f, 0.0f, 10.0f),
-        glm::vec3(90.0f, 0.0f, 30.0f),
-        glm::vec3(60.0f, 0.0f, -10.0f),
-        glm::vec3(-10.0f, 0.0f, -50.0f),
-        glm::vec3(-30.0f, 0.0f, -10.0f),
-        glm::vec3(-70.0f, 0.0f, -30.0f),
-        glm::vec3(-10.0f, 0.0f, 10.0f),
-        glm::vec3(-50.0f, 0.0f, 30.0f)
-    };
-    for (const auto& pos : treePositions) {
-        // Randomize trunk and foliage size
-        float trunkHeight = 2.5f + (rand() % 5) * 0.5f; // 2.5-5m
-        float trunkWidth = 0.3f + (rand() % 3) * 0.1f;  // 0.3-0.5m
-        float foliageSize = 1.2f + (rand() % 5) * 0.4f; // 1.2-3.2m
-        // Trunk
+    // Mall parameters
+    glm::vec3 mallPos = glm::vec3(60.0f, 0.0f, 60.0f);
+    float mallWidth = 60.0f;
+    float mallDepth = 40.0f;
+    float mallHeight = 15.0f;
+
+    // Main mall building
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(mallPos.x, mallHeight / 2.0f, mallPos.z));
+    model = glm::scale(model, glm::vec3(mallWidth, mallHeight, mallDepth));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", glm::vec3(0.85f, 0.85f, 0.9f));
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // Mall entrance canopy
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(mallPos.x, 2.0f, mallPos.z - mallDepth/2.0f - 3.0f));
+    model = glm::scale(model, glm::vec3(20.0f, 1.0f, 6.0f));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", glm::vec3(0.2f, 0.2f, 0.25f));
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // Row of small shops in front of mall
+    int shopCount = 6;
+    float shopWidth = mallWidth / (float)shopCount - 1.0f;
+    float shopDepth = 8.0f;
+    float shopHeight = 6.0f;
+    float firstShopX = mallPos.x - mallWidth/2.0f + shopWidth/2.0f + 1.0f;
+    for (int i = 0; i < shopCount; ++i) {
+        float sx = firstShopX + i * (shopWidth + 1.0f);
+        float sz = mallPos.z - mallDepth/2.0f - shopDepth/2.0f - 10.0f;
         model = glm::mat4(1.0f);
-        model = glm::translate(model, pos + glm::vec3(0.0f, trunkHeight / 2.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(trunkWidth, trunkHeight, trunkWidth));
+        model = glm::translate(model, glm::vec3(sx, shopHeight/2.0f, sz));
+        model = glm::scale(model, glm::vec3(shopWidth, shopHeight, shopDepth));
         shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.55f, 0.27f, 0.07f)); // Brown trunk
-        glBindVertexArray(cylinderVAO);
-        glDrawElements(GL_TRIANGLES, 96, GL_UNSIGNED_INT, 0);
-        // Foliage: 2-3 layers
-        int layers = 2 + rand() % 2;
-        for (int i = 0; i < layers; ++i) {
-            float layerHeight = trunkHeight + 0.5f + i * (foliageSize * 0.5f);
-            float layerSize = foliageSize * (1.0f - i * 0.2f);
-            float greenShade = 0.6f + (rand() % 4) * 0.1f;
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, pos + glm::vec3(0.0f, layerHeight, 0.0f));
-            model = glm::scale(model, glm::vec3(layerSize, layerSize, layerSize));
-            shader.SetMat4("model", model);
-            shader.SetVec3("objectColor", glm::vec3(0.1f, greenShade, 0.1f));
-            glBindVertexArray(cubeVAO);
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-        }
+        shader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.85f));
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Shop glass window (front)
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(sx, shopHeight/2.0f - 0.5f, sz + shopDepth/2.0f + 0.01f));
+        model = glm::scale(model, glm::vec3(shopWidth*0.8f, shopHeight*0.6f, 0.05f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.6f, 0.8f, 0.95f));
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Shop signage
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(sx, shopHeight - 0.6f, sz + shopDepth/2.0f + 0.02f));
+        model = glm::scale(model, glm::vec3(shopWidth*0.6f, 0.6f, 0.02f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.1f, 0.4f, 0.8f));
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    // Parking lot surface in front of shops
+    float parkingWidth = mallWidth + 20.0f;
+    float parkingDepth = 30.0f;
+    glm::vec3 parkingCenter = glm::vec3(mallPos.x, 0.01f, mallPos.z - mallDepth/2.0f - 10.0f);
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(parkingCenter.x, 0.02f, parkingCenter.z));
+    model = glm::scale(model, glm::vec3(parkingWidth, 0.04f, parkingDepth));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", glm::vec3(0.15f, 0.15f, 0.15f));
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // Parking lines
+    int spacesPerRow = 10;
+    float spaceWidth = (parkingWidth - 10.0f) / (float)spacesPerRow;
+    float startLineX = parkingCenter.x - parkingWidth/2.0f + 5.0f + spaceWidth/2.0f;
+    float lineZ = parkingCenter.z - parkingDepth/2.0f + 2.0f;
+    for (int i = 0; i < spacesPerRow; ++i) {
+        float lx = startLineX + i * spaceWidth;
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(lx, 0.05f, lineZ));
+        model = glm::scale(model, glm::vec3(spaceWidth*0.9f, 0.02f, 0.12f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", glm::vec3(0.95f, 0.95f, 0.95f));
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    // Render parked cars
+    for (const auto& pcar : parkedCars) {
+        renderRealisticCar(pcar, shader, cubeVAO, cylinderVAO);
     }
 }
