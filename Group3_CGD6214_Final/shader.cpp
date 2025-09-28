@@ -1,5 +1,5 @@
 #include "Shader.h"
-#include <memory>
+#include <iostream>
 
 // Constructor reads and builds the shader
 Shader::Shader(const char* vertexPath, const char* fragmentPath, const char* geometryPath)
@@ -540,6 +540,9 @@ void main()
 
     auto lightingShader = std::make_unique<Shader>();
     lightingShader->LoadFromString(lightingVert, lightingFrag);
+    // Ensure 'lighting' shader has useNormalMap and normalMap sampler uniform declared; the fragment uses them so no runtime error.
+    lightingShader->SetBool("useNormalMap", false);
+    lightingShader->SetInt("normalMap", 0);
     shaders_["lighting"] = std::move(lightingShader);
 
     defaultShadersCreated_ = true;

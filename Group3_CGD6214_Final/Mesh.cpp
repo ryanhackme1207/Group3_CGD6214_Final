@@ -5,16 +5,20 @@
 #include <unordered_map>
 #include <cstdint>
 #include <cmath>
+#include <fstream>
 
 #include "stb_image.h"
 
-Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0) {}
+// single default constructor, initialize normalMapID too
+Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0) {}
 
 static Mesh::Vertex ConvertFromFlat(const float* base) {
     Mesh::Vertex v;
     v.pos = glm::vec3(base[0], base[1], base[2]);
     v.normal = glm::vec3(base[3], base[4], base[5]);
     v.uv = glm::vec2(base[6], base[7]);
+    // default tangent (may be recomputed later)
+    v.tangent = glm::vec3(1.0f, 0.0f, 0.0f);
     return v;
 }
 
@@ -25,7 +29,7 @@ static void ConvertToFlat(const Mesh::Vertex& v, float* out) {
 }
 
 Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices)
-    : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0)
+    : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0)
 {
     if (vertices.empty()) return;
 
@@ -36,6 +40,34 @@ Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& 
         cpuVertices.push_back(ConvertFromFlat(&vertices[i * 8]));
     }
     cpuIndices = indices;
+
+    // compute simple tangents per-vertex based on UVs and positions
+    // zero tangents
+    for (auto &v : cpuVertices) v.tangent = glm::vec3(0.0f);
+    for (size_t t = 0; t + 2 < cpuIndices.size(); t += 3) {
+        unsigned int i0 = cpuIndices[t+0];
+        unsigned int i1 = cpuIndices[t+1];
+        unsigned int i2 = cpuIndices[t+2];
+        if (i0 >= cpuVertices.size() || i1 >= cpuVertices.size() || i2 >= cpuVertices.size()) continue;
+        auto &v0 = cpuVertices[i0];
+        auto &v1 = cpuVertices[i1];
+        auto &v2 = cpuVertices[i2];
+        glm::vec3 edge1 = v1.pos - v0.pos;
+        glm::vec3 edge2 = v2.pos - v0.pos;
+        glm::vec2 deltaUV1 = v1.uv - v0.uv;
+        glm::vec2 deltaUV2 = v2.uv - v0.uv;
+        float f = 1.0f;
+        float denom = (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+        if (fabs(denom) > 1e-8f) f = 1.0f / denom; else f = 0.0f;
+        glm::vec3 tangent = f * (edge1 * deltaUV2.y - edge2 * deltaUV1.y);
+        v0.tangent += tangent;
+        v1.tangent += tangent;
+        v2.tangent += tangent;
+    }
+    for (auto &v : cpuVertices) {
+        if (glm::length(v.tangent) > 1e-6f) v.tangent = glm::normalize(v.tangent);
+        else v.tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+    }
 
     // create GPU buffers
     glGenVertexArrays(1, &VAO);
@@ -52,12 +84,19 @@ Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& 
         textureID = LoadTextureFromFile(texturePath);
         if (textureID == 0) {
             std::cerr << "Warning: failed to load texture: " << texturePath << std::endl;
+        } else {
+            // attempt to load associated normal map using naming convention: diffuse.png -> diffuse_n.png or _normal
+            normalMapID = LoadAssociatedNormalMap(texturePath);
+            if (normalMapID == 0) {
+                // not fatal
+            }
         }
     }
 }
 
 Mesh::~Mesh()
 {
+    if (normalMapID) glDeleteTextures(1, &normalMapID);
     if (textureID) glDeleteTextures(1, &textureID);
     if (EBO) glDeleteBuffers(1, &EBO);
     if (VBO) glDeleteBuffers(1, &VBO);
@@ -70,21 +109,24 @@ void Mesh::SetTexture(const std::string& texturePath)
         glDeleteTextures(1, &textureID);
         textureID = 0;
     }
+    if (normalMapID) { glDeleteTextures(1, &normalMapID); normalMapID = 0; }
     if (!texturePath.empty()) {
         textureID = LoadTextureFromFile(texturePath);
         if (textureID == 0) std::cerr << "SetTexture: failed to load " << texturePath << std::endl;
+        else normalMapID = LoadAssociatedNormalMap(texturePath);
     }
 }
 
 void Mesh::UpdateGPU()
 {
-    // prepare flat floats
+    // prepare flat floats (we only upload position, normal, uv, tangent)
     std::vector<float> flat;
-    flat.reserve(cpuVertices.size() * 8);
+    flat.reserve(cpuVertices.size() * 11); // pos(3) normal(3) uv(2) tangent(3)
     for (const auto& v : cpuVertices) {
-        float tmp[8];
-        ConvertToFlat(v, tmp);
-        for (int i = 0; i < 8; ++i) flat.push_back(tmp[i]);
+        flat.push_back(v.pos.x); flat.push_back(v.pos.y); flat.push_back(v.pos.z);
+        flat.push_back(v.normal.x); flat.push_back(v.normal.y); flat.push_back(v.normal.z);
+        flat.push_back(v.uv.x); flat.push_back(v.uv.y);
+        flat.push_back(v.tangent.x); flat.push_back(v.tangent.y); flat.push_back(v.tangent.z);
     }
 
     indexCount = static_cast<unsigned int>(cpuIndices.size());
@@ -97,7 +139,7 @@ void Mesh::UpdateGPU()
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, cpuIndices.size() * sizeof(unsigned int), cpuIndices.data(), GL_STATIC_DRAW);
 
-    GLsizei stride = 8 * sizeof(float);
+    GLsizei stride = 11 * sizeof(float);
     // position
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
@@ -107,6 +149,9 @@ void Mesh::UpdateGPU()
     // texcoord
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
+    // tangent
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
 
     glBindVertexArray(0);
 }
@@ -132,6 +177,17 @@ void Mesh::Draw(Shader& shader, const glm::mat4& modelMatrix)
         shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 1.0f));
         shader.SetBool("hasTexture", false);
     }
+
+    // bind normal map
+    if (normalMapID) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, normalMapID);
+        shader.SetInt("normalMap", 1);
+        shader.SetBool("useNormalMap", true);
+    } else {
+        shader.SetBool("useNormalMap", false);
+    }
+
     glBindVertexArray(VAO);
     if (indexCount > 0) {
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
@@ -141,6 +197,10 @@ void Mesh::Draw(Shader& shader, const glm::mat4& modelMatrix)
     if (textureID) {
         glBindTexture(GL_TEXTURE_2D, 0);
         shader.SetBool("hasTexture", false);
+    }
+    if (normalMapID) {
+        glBindTexture(GL_TEXTURE_2D, 0);
+        shader.SetBool("useNormalMap", false);
     }
 }
 
@@ -171,6 +231,27 @@ GLuint Mesh::LoadTextureFromFile(const std::string& path)
 
     stbi_image_free(data);
     return tex;
+}
+
+// Attempt to load associated normal map using naming conventions (e.g. diffuse.png -> diffuse_normal.png or *_n.png)
+GLuint Mesh::LoadAssociatedNormalMap(const std::string& diffusePath)
+{
+    // try variants
+    std::vector<std::string> candidates;
+    // insert "_n", "_normal", "-n", "-normal"
+    size_t dot = diffusePath.find_last_of('.');
+    if (dot == std::string::npos) return 0;
+    std::string base = diffusePath.substr(0, dot);
+    std::string ext = diffusePath.substr(dot);
+    candidates.push_back(base + "_n" + ext);
+    candidates.push_back(base + "_normal" + ext);
+    candidates.push_back(base + "-n" + ext);
+    candidates.push_back(base + "-normal" + ext);
+    for (const auto &c : candidates) {
+        std::ifstream f(c.c_str(), std::ios::binary);
+        if (f.good()) { f.close(); return LoadTextureFromFile(c); }
+    }
+    return 0;
 }
 
 // Simple helper to create a cube mesh (returns by value; user can wrap in shared_ptr)
@@ -243,6 +324,7 @@ void Mesh::SubdivideMidpoint()
             vm.pos = 0.5f * (va.pos + vb.pos);
             vm.normal = glm::normalize(0.5f * (va.normal + vb.normal));
             vm.uv = 0.5f * (va.uv + vb.uv);
+            vm.tangent = glm::normalize(0.5f * (va.tangent + vb.tangent));
             unsigned int idx = AddVertex(vm);
             edgeMid[key] = idx;
             return idx;
@@ -276,6 +358,7 @@ void Mesh::Extrude(float distance)
         Vertex v = cpuVertices[i];
         Vertex ve = v;
         ve.pos += v.normal * distance;
+        ve.tangent = v.tangent;
         extrudedIndex[i] = static_cast<int>(AddVertex(ve));
     }
 

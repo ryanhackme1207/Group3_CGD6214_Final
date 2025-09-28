@@ -27,6 +27,7 @@ public:
         glm::vec3 pos;
         glm::vec3 normal;
         glm::vec2 uv;
+        glm::vec3 tangent; // added for normal mapping
     };
 
     // Subdivide each triangle into 4 by creating midpoints on edges (midpoint subdivision)
@@ -45,6 +46,7 @@ private:
     GLuint EBO;
     unsigned int indexCount;
     GLuint textureID; // 0 if none
+    GLuint normalMapID; // normal map texture (0 if none)
 
     // CPU-side mesh
     std::vector<Vertex> cpuVertices;
@@ -52,6 +54,9 @@ private:
 
     // helper to load texture
     GLuint LoadTextureFromFile(const std::string& path);
+
+    // helper to attempt loading normal map using naming conventions
+    GLuint LoadAssociatedNormalMap(const std::string& diffusePath);
 
     // upload CPU mesh to GPU buffers
     void UpdateGPU();

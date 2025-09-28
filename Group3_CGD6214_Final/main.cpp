@@ -639,7 +639,94 @@ int main()
     // Ensure shader defaults to safe values and print active uniforms for debugging
     buildingShader.Use();
     buildingShader.SetFloat("bumpIntensity", 0.0f);
+    buildingShader.SetFloat("time", 0.0f);
+    buildingShader.SetBool("hasTexture", false);
+    buildingShader.SetBool("useNormalMap", false);
     buildingShader.PrintActiveUniforms();
+
+    // Create a small additive glow shader (used for second pass to add light glows)
+    Shader glowShader;
+    std::string glowVert = R"(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTexCoord;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+void main() {
+    // pass-through; no varying required for this simple shader
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+}
+)";
+    std::string glowFrag = R"(
+#version 330 core
+out vec4 FragColor;
+uniform vec3 glowColor;
+uniform float glowAlpha;
+void main() {
+    FragColor = vec4(glowColor, glowAlpha);
+}
+)";
+    glowShader.LoadFromString(glowVert, glowFrag);
+
+    // Spotlight volumetric beam shader (additive) - uses world-space position computed in vertex shader
+    Shader spotlightShader;
+    std::string spotVert = R"(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec3 WorldPos;
+
+void main() {
+    vec4 world = model * vec4(aPos, 1.0);
+    WorldPos = world.xyz;
+    gl_Position = projection * view * world;
+}
+)";
+    std::string spotFrag = R"(
+#version 330 core
+in vec3 WorldPos;
+out vec4 FragColor;
+
+uniform vec3 beamApex; // world-space apex position
+uniform vec3 beamDir; // normalized direction the beam points toward (toward illuminated area)
+uniform float beamLength;
+uniform float beamRadius;
+uniform vec3 beamColor;
+uniform float beamIntensity; // scalar
+
+void main() {
+    // Vector from apex into beam
+    vec3 L = WorldPos - beamApex;
+    // project onto beam axis (beamDir points toward illuminated direction)
+    float along = dot(L, -beamDir);
+    if (along < 0.0 || along > beamLength) discard;
+
+    // perpendicular distance from axis
+    vec3 proj = -beamDir * along;
+    vec3 perp = L - proj;
+    float radial = length(perp);
+
+    // radial falloff (strong near axis), and longitudinal falloff
+    float radialFactor = 1.0 - smoothstep(0.0, beamRadius, radial);
+    float longitudinal = 1.0 - (along / beamLength);
+    float alpha = beamIntensity * radialFactor * longitudinal;
+    alpha = clamp(alpha, 0.0, 1.0);
+
+    // tiny soft edge by discarding very low alpha to save fillrate
+    if (alpha < 0.005) discard;
+
+    FragColor = vec4(beamColor * alpha, alpha);
+}
+)";
+    spotlightShader.LoadFromString(spotVert, spotFrag);
 
     // Create geometry
     GLuint cubeVAO = createCube();
@@ -931,6 +1018,7 @@ int main()
         buildingShader.SetFloat("time", (float)glfwGetTime());
         // Ensure procedural geometry uses no texture unless explicitly bound by a Mesh draw
         buildingShader.SetBool("hasTexture", false);
+        buildingShader.SetBool("useNormalMap", false);
 
         // View/projection transformations using camera
         glm::mat4 projection = camera.GetProjectionMatrix((float)WIDTH / (float)HEIGHT);
@@ -943,6 +1031,17 @@ int main()
         sceneGraph.Draw(buildingShader);
 
         // Set lighting uniforms (sun-like lighting)
+        // Predeclare light containers so we can use them for a second additive pass (glow)
+        std::vector<glm::vec3> pointPositions;
+        std::vector<glm::vec3> pointColors;
+        std::vector<float> pointIntensities;
+        std::vector<glm::vec3> spotPositions;
+        std::vector<glm::vec3> spotDirections;
+        std::vector<glm::vec3> spotColors;
+        std::vector<float> spotIntensities;
+        std::vector<float> spotInner;
+        std::vector<float> spotOuter;
+
         if (useDirectionalLight) {
             // Directional light
             // Calculate sun position based on time of day
@@ -1006,10 +1105,6 @@ int main()
             // Compute a lightScale based on skyIntensity so lights fade in at dusk
             float lightScale = glm::clamp(1.0f - (skyIntensity - 0.1f) / 0.7f, 0.0f, 1.0f);
 
-            std::vector<glm::vec3> pointPositions;
-            std::vector<glm::vec3> pointColors;
-            std::vector<float> pointIntensities;
-
             // East-West street lights
             for (int i = -120; i <= 120; i += 30) {
                 for (int side = -1; side <= 1; side += 2) {
@@ -1060,13 +1155,6 @@ int main()
             }
 
             // Setup spotlights on tall buildings (KL Tower, Eiffel Tower)
-            std::vector<glm::vec3> spotPositions;
-            std::vector<glm::vec3> spotDirections;
-            std::vector<glm::vec3> spotColors;
-            std::vector<float> spotIntensities;
-            std::vector<float> spotInner;
-            std::vector<float> spotOuter;
-
             // KL Tower spotlight (points downward)
             glm::vec3 klPos = glm::vec3(25.0f, 421.0f + 30.0f, 25.0f);
             spotPositions.push_back(klPos);
@@ -1299,8 +1387,6 @@ int main()
             }
         }
 
-       
-
         // === RENDER ROAD INFRASTRUCTURE ===
         renderRoadInfrastructure(buildingShader, cubeVAO, glfwGetTime());
 
@@ -1501,6 +1587,119 @@ int main()
 
             glBindVertexArray(cubeVAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // SECOND PASS: additive glow pass for point lights and spotlights (multi-pass lighting enhancement)
+        if (!pointPositions.empty() || !spotPositions.empty()) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            glowShader.Use();
+            glowShader.SetMat4("projection", projection);
+            glowShader.SetMat4("view", view);
+
+            // By default hide the small emissive cube markers (set to true for debugging)
+            bool showLightMarkers = false;
+
+            if (showLightMarkers) {
+                // Render small additive cubes at point light positions
+                for (size_t i = 0; i < pointPositions.size(); ++i) {
+                    glm::vec3 p = pointPositions[i];
+                    glm::mat4 m = glm::mat4(1.0f);
+                    float scale = 0.5f + pointIntensities[i] * 0.25f;
+                    m = glm::translate(m, p);
+                    m = glm::scale(m, glm::vec3(scale));
+                    glowShader.SetMat4("model", m);
+                    glm::vec3 col = pointColors[i] * glm::clamp(pointIntensities[i], 0.3f, 6.0f);
+                    glowShader.SetVec3("glowColor", col);
+                    glowShader.SetFloat("glowAlpha", 0.6f);
+                    glBindVertexArray(cubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+
+                // Render small additive cubes at spotlight positions
+                for (size_t i = 0; i < spotPositions.size(); ++i) {
+                    glm::vec3 p = spotPositions[i];
+                    glm::mat4 m = glm::mat4(1.0f);
+                    float scale = 0.8f + spotIntensities[i] * 0.25f;
+                    m = glm::translate(m, p);
+                    m = glm::scale(m, glm::vec3(scale));
+                    glowShader.SetMat4("model", m);
+                    glm::vec3 col = spotColors[i] * glm::clamp(spotIntensities[i], 0.3f, 8.0f);
+                    glowShader.SetVec3("glowColor", col);
+                    glowShader.SetFloat("glowAlpha", 0.7f);
+                    glBindVertexArray(cubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+            }
+
+            glDisable(GL_BLEND);
+        }
+
+        // --- VOLMETRIC SPOTLIGHT BEAMS FOR TALL BUILDINGS (KL, Eiffel) ---
+        if (!spotPositions.empty()) {
+            // Render additive volumetric beams aligned with spot directions
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            // Do not write to depth buffer so beams blend over the scene
+            glDepthMask(GL_FALSE);
+            spotlightShader.Use();
+            spotlightShader.SetMat4("projection", projection);
+            spotlightShader.SetMat4("view", view);
+
+            for (size_t i = 0; i < spotPositions.size(); ++i) {
+                glm::vec3 apex = spotPositions[i];
+                glm::vec3 dir = glm::normalize(spotDirections[i]);
+                glm::vec3 color = spotColors[i];
+                float intensity = spotIntensities[i] * 0.12f; // tune down for visual
+                // Beam parameters
+                float beamLength = 120.0f; // meters - how far beam reaches
+                float beamRadius = 30.0f;  // meters at base
+
+                // Build model: cylinder of height=1 (createCylinder uses h=1) scaled so that its top aligns with apex
+                // Cylinder local up is +Y; we want top at apex, so translate center to apex - dir*(0.5*beamLength)
+                glm::vec3 center = apex - dir * (0.5f * beamLength);
+
+                // rotation from +Y to dir
+                glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+                glm::mat4 rot = glm::mat4(1.0f);
+                float d = glm::dot(up, dir);
+                if (d > 0.9999f) {
+                    rot = glm::mat4(1.0f);
+                } else if (d < -0.9999f) {
+                    // 180 degree rotation around X axis (or any orthogonal axis)
+                    glm::quat q = glm::angleAxis(glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+                    rot = glm::mat4_cast(q);
+                } else {
+                    glm::vec3 axis = glm::normalize(glm::cross(up, dir));
+                    float angle = acos(glm::clamp(d, -1.0f, 1.0f));
+                    glm::quat q = glm::angleAxis(angle, axis);
+                    rot = glm::mat4_cast(q);
+                }
+
+                // scale: cylinder initial radius=0.5, height=1.0 (see createCylinder), so scale x/z by (beamRadius / 0.5) and y by beamLength
+                glm::mat4 modelSpot = glm::mat4(1.0f);
+                modelSpot = glm::translate(modelSpot, center);
+                modelSpot *= rot;
+                modelSpot = glm::scale(modelSpot, glm::vec3(beamRadius / 0.5f, beamLength, beamRadius / 0.5f));
+
+                spotlightShader.SetMat4("model", modelSpot);
+                spotlightShader.SetVec3("beamApex", apex);
+                spotlightShader.SetVec3("beamDir", dir);
+                spotlightShader.SetFloat("beamLength", beamLength);
+                spotlightShader.SetFloat("beamRadius", beamRadius);
+                spotlightShader.SetVec3("beamColor", color);
+                spotlightShader.SetFloat("beamIntensity", intensity);
+
+                glBindVertexArray(cylinderVAO);
+                // cylinder uses indexed draw with ~segments*6 indices
+                // We know createCylinder used EBO and returned VAO; use glDrawElements with an estimated count
+                // Safer: draw arrays fallback: the cylinder uses index buffer; but VAO/EBO set, so call glDrawElements with count
+                // From createCylinder implementation, index count = segments * 6 (segments = 8) => 48
+                glDrawElements(GL_TRIANGLES, 8 * 6, GL_UNSIGNED_INT, 0);
+            }
+
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
         }
 
         // draw skybox

@@ -4,6 +4,9 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoord;
+
+in mat3 TBN; // tangent->world matrix provided by vertex shader
+
 in vec3 TangentLightPos;
 in vec3 TangentViewPos;
 in vec3 TangentFragPos;
@@ -65,6 +68,14 @@ uniform float time;
 uniform sampler2D diffuseTex;
 uniform bool hasTexture;
 
+// Normal mapping
+uniform sampler2D normalMap;
+uniform bool useNormalMap;
+
+// Shadow map for the primary spotlight (index 0)
+uniform sampler2D spotShadowMap;
+uniform mat4 spotLightSpace;
+
 float groundNoise(vec2 coord) {
     float noise = 0.0;
     noise += sin(coord.x * 5.0 + time * 0.5) * 0.1;
@@ -87,17 +98,32 @@ vec3 groundBumpNormal(vec2 texCoord) {
     return normal;
 }
 
+float ShadowCalculation(vec4 fragPosLightSpace)
+{
+    // Perform perspective divide
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    // Transform to [0,1]
+    projCoords = projCoords * 0.5 + 0.5;
+    // If outside light's frustum
+    if (projCoords.z > 1.0) return 0.0;
+    float bias = 0.005;
+    float shadow = 0.0;
+    // PCF
+    float texelSize = 1.0 / 2048.0; // matches shadow map resolution used in main
+    for(int x = -1; x <= 1; ++x) {
+        for(int y = -1; y <= 1; ++y) {
+            float pcfDepth = texture(spotShadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += (projCoords.z - bias) > pcfDepth ? 1.0 : 0.0;
+        }
+    }
+    shadow /= 9.0;
+    return shadow;
+}
+
 void main()
 {
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
-
-    // combine bumpIntensity and groundBumpIntensity for effective bump
-    float effectiveBump = clamp(groundBumpIntensity + bumpIntensity, 0.0, 1.0);
-    if (isGround && effectiveBump > 0.01) {
-        vec3 bumpNorm = groundBumpNormal(TexCoord);
-        norm = normalize(mix(norm, bumpNorm, effectiveBump));
-    }
 
     // determine final object color, sampling diffuse texture when available
     vec3 texColor = vec3(1.0);
@@ -105,6 +131,20 @@ void main()
         texColor = texture(diffuseTex, TexCoord).rgb;
     }
     vec3 objectColorFinal = texColor * objectColor;
+
+    // combine bumpIntensity and groundBumpIntensity for effective bump
+    float effectiveBump = clamp(groundBumpIntensity + bumpIntensity, 0.0, 1.0);
+
+    // Apply normal map if requested and available (skip for ground bump which uses procedural bump)
+    if (useNormalMap && !isGround) {
+        vec3 n = texture(normalMap, TexCoord).rgb;
+        n = normalize(n * 2.0 - 1.0);
+        // transform from tangent to world
+        norm = normalize(TBN * n);
+    } else if (isGround && effectiveBump > 0.01) {
+        vec3 bumpNorm = groundBumpNormal(TexCoord);
+        norm = normalize(mix(norm, bumpNorm, effectiveBump));
+    }
 
     // Start with global ambient
     vec3 result = ambientColor * objectColorFinal * 0.15;
@@ -184,6 +224,14 @@ void main()
         diffuse *= attenuation;
         specular *= attenuation;
         vec3 ambient = 0.03 * sl.color * sl.intensity * attenuation;
+
+        // Apply shadow for primary spotlight (index 0) if available
+        if (i == 0) {
+            vec4 fragPosLightSpace = spotLightSpace * vec4(FragPos, 1.0);
+            float shadow = ShadowCalculation(fragPosLightSpace);
+            diffuse *= (1.0 - shadow);
+            specular *= (1.0 - shadow);
+        }
 
         result += (ambient + diffuse + specular) * objectColorFinal;
     }
