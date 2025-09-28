@@ -51,6 +51,9 @@
     <ClCompile Include="Traffic.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Pedestrians.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">
@@ -81,6 +84,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Traffic.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Pedestrians.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

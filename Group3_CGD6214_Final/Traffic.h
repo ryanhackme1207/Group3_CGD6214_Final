@@ -32,3 +32,8 @@ void updateCars(float deltaTime);
 void spawnCar();
 void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime);
 void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
+// Render the shopping mall complex (implemented in Traffic.cpp)
+void renderShoppingMallComplex(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
+
+// Render a car using the realistic car renderer defined in main.cpp
+void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);

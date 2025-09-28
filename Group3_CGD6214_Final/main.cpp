@@ -18,6 +18,8 @@ using namespace glm;
 #include "LODManager.h"
 #include "SpatialPartition.h"
 
+#include "Pedestrians.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -155,48 +157,6 @@ std::vector<Car> cars;
 std::vector<Car> parkedCars; // parked cars in parking lots
 float carSpawnTimer = 0.0f;
 
-// New: human prototypes
-void spawnPedestrians(int count);
-void updatePedestrians(float deltaTime);
-void renderPedestrian(const struct Pedestrian& p, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
-
-// Structure for human characters
-struct Pedestrian {
-    glm::vec3 position;
-    glm::vec3 direction;
-    float speed;
-    float walkTimer;
-    float walkDuration;
-    float bodyHeight;
-    glm::vec3 color;
-    float walkCyclePhase; // NEW: phase for limb animation
-    Pedestrian(glm::vec3 pos, glm::vec3 dir, float spd, float dur, glm::vec3 col)
-        : position(pos), direction(dir), speed(spd), walkTimer(0.0f), walkDuration(dur), bodyHeight(1.75f), color(col), walkCyclePhase(0.0f) {}
-};
-
-std::vector<Pedestrian> pedestrians;
-
-// Function prototypes
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void mouse_callback(GLFWwindow* window, double xpos, double ypos);
-void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
-void processInput(GLFWwindow* window);
-GLuint createCube();
-GLuint createGround();
-GLuint createTriangularRoof();
-GLuint createCylinder();
-void updateCars(float deltaTime);
-void spawnCar();
-void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime);
-void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
-void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
-void renderShoppingMallComplex(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO); // new prototype
-
-// Pedestrian prototypes
-void spawnPedestrians(int count);
-void updatePedestrians(float deltaTime);
-void renderPedestrian(const struct Pedestrian& p, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
-
 // Vertax (skybox)
 float skyboxVertices[] = {
     -1.0f,  1.0f, -1.0f,
@@ -328,6 +288,22 @@ unsigned int createShaderProgram(const char* vertexSource, const char* fragmentS
 
     return program;
 }
+
+// Ensure prototypes are visible before main (duplicate-safe)
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void processInput(GLFWwindow* window);
+GLuint createCube();
+GLuint createGround();
+GLuint createTriangularRoof();
+GLuint createCylinder();
+void updateCars(float deltaTime);
+void spawnCar();
+void renderRoadInfrastructure(class Shader& shader, GLuint cubeVAO, float currentTime);
+void renderRealisticCar(const struct Car& car, class Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
+void renderTrees(class Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
+void renderShoppingMallComplex(class Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
 
 int main()
 {
@@ -718,6 +694,25 @@ int main()
             buildingShader.SetVec3("objectColor", roadColor);
             glBindVertexArray(cubeVAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Sidewalks along East-West highway (both sides)
+            glm::vec3 sidewalkColor = glm::vec3(0.65f, 0.65f, 0.66f);
+            float sidewalkWidth = 2.5f; // 2.5m sidewalk depth
+            float sidewalkOffsetZ = 12.5f + sidewalkWidth / 2.0f + 0.3f; // 12.5 is half of 25m highway
+            // Right side
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, 0.03f, -sidewalkOffsetZ));
+            model = glm::scale(model, glm::vec3(5.0f, 0.02f, sidewalkWidth));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", sidewalkColor);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            // Left side
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, 0.03f, sidewalkOffsetZ));
+            model = glm::scale(model, glm::vec3(5.0f, 0.02f, sidewalkWidth));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", sidewalkColor);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
         // East-West Highway lane markings (white dashed lines)
@@ -764,6 +759,25 @@ int main()
             if (timeOfDay >= 6.0f && timeOfDay < 10.0f) roadColor = glm::vec3(0.38f, 0.38f, 0.38f);
             buildingShader.SetMat4("model", model);
             buildingShader.SetVec3("objectColor", roadColor);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            // Sidewalks along North-South highway (both sides)
+            glm::vec3 sidewalkColor = glm::vec3(0.65f, 0.65f, 0.66f);
+            float sidewalkWidth = 2.5f;
+            float sidewalkOffsetX = 12.5f + sidewalkWidth / 2.0f + 0.3f;
+            // Right side (positive X)
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(sidewalkOffsetX, 0.03f, z));
+            model = glm::scale(model, glm::vec3(sidewalkWidth, 0.02f, 5.0f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", sidewalkColor);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            // Left side (negative X)
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-sidewalkOffsetX, 0.03f, z));
+            model = glm::scale(model, glm::vec3(sidewalkWidth, 0.02f, 5.0f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", sidewalkColor);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
@@ -816,7 +830,8 @@ int main()
         renderRoadInfrastructure(buildingShader, cubeVAO, glfwGetTime());
 
         // === RENDER TREES ===
-        renderTrees(buildingShader, cubeVAO, cylinderVAO);
+        // moved tree generation and rendering after buildings so we can avoid placing trees inside buildings
+        // renderTrees(buildingShader, cubeVAO, cylinderVAO); // removed
 
         // === RENDER REALISTIC MOVING CARS ===
         for (const auto& car : cars) {
@@ -859,6 +874,9 @@ int main()
         // Seed random for consistent building generation
         srand(12345);
 
+        // Collect placed building boxes so trees can avoid them
+        std::vector<glm::vec4> buildingBoxes; // x, z, halfWidth, halfDepth
+
         // === FIRST: ADD ICONIC TOWERS ===
 
         // KL Tower (Kuala Lumpur Tower) - 421m tall
@@ -870,6 +888,9 @@ int main()
 
         glBindVertexArray(cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // (push KL tower footprint to buildingBoxes to avoid trees too close)
+        buildingBoxes.emplace_back(glm::vec4(25.0f, 25.0f, 3.0f * 0.5f, 421.0f * 0.5f));
 
         // KL Tower antenna/spire
         model = glm::mat4(1.0f);
@@ -914,6 +935,8 @@ int main()
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
+        buildingBoxes.emplace_back(glm::vec4(-30.0f, -30.0f, 12.0f * 0.5f, 100.0f * 0.5f));
+
         // Tower middle section
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(-30.0f, 150.0f, -30.0f));
@@ -931,6 +954,8 @@ int main()
         buildingShader.SetVec3("objectColor", glm::vec3(0.6f, 0.5f, 0.4f));
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        buildingBoxes.emplace_back(glm::vec4(-30.0f, -30.0f, 4.0f * 0.5f, 100.0f * 0.5f));
 
         // Eiffel Tower antenna
         model = glm::mat4(1.0f);
@@ -1051,6 +1076,37 @@ int main()
                 actualX = glm::clamp(actualX, (float)x - limitRes + width*0.5f, (float)x + limitRes - width*0.5f);
                 actualZ = glm::clamp(actualZ, (float)z - limitRes + depth*0.5f, (float)z + limitRes - depth*0.5f);
 
+                // Check collision with already placed buildings to avoid overlap
+                bool collidesWithExisting = false;
+                for (const auto &bb : buildingBoxes) {
+                    float bx = bb.x, bz = bb.y, halfWb = bb.z, halfDb = bb.w;
+                    float halfW = width * 0.5f;
+                    float halfD = depth * 0.5f;
+                    float minDistX = halfW + halfWb + 0.5f; // small buffer
+                    float minDistZ = halfD + halfDb + 0.5f;
+                    if (fabs(actualX - bx) < minDistX && fabs(actualZ - bz) < minDistZ) { collidesWithExisting = true; break; }
+                }
+                if (collidesWithExisting) continue; // skip placement if it would overlap
+
+                // Additional safety: ensure building has clearance from major roads and secondary roads
+                float halfW = width * 0.5f;
+                float halfD = depth * 0.5f;
+                float clearance = 2.5f; // meters from road edge
+                bool tooCloseToRoad = false;
+                // main EW highway at z=0 spans approx +/-12.5; require clearance
+                if (fabs(actualZ) - halfD < 15.0f + clearance) tooCloseToRoad = true;
+                // main NS highway at x=0
+                if (fabs(actualX) - halfW < 15.0f + clearance) tooCloseToRoad = true;
+                // secondary grid roads at multiples of 40
+                float modX = fmodf(fabs(actualX), 40.0f);
+                float distToNearestGridX = glm::min(modX, 40.0f - modX);
+                if (distToNearestGridX - halfW < 4.0f + clearance) tooCloseToRoad = true;
+                float modZ = fmodf(fabs(actualZ), 40.0f);
+                float distToNearestGridZ = glm::min(modZ, 40.0f - modZ);
+                if (distToNearestGridZ - halfD < 4.0f + clearance) tooCloseToRoad = true;
+
+                if (tooCloseToRoad) continue; // skip this placement
+
                 // Render main building
                 model = glm::mat4(1.0f);
                 model = glm::translate(model, glm::vec3(actualX, height / 2.0f, actualZ));
@@ -1067,6 +1123,9 @@ int main()
                 buildingShader.SetVec3("objectColor", color);
                 glBindVertexArray(cubeVAO);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
+
+                // record building footprint for tree placement
+                buildingBoxes.emplace_back(glm::vec4(actualX, actualZ, halfW, halfD));
 
                 // Add triangular roof if applicable
                 if (hasTriangularRoof) {
@@ -1099,6 +1158,87 @@ int main()
                     }
                 }
             }
+        }
+
+        // --- TREE PLACEMENT & RENDERING ---
+        // Initialize trees after all buildings (including extraBuildings) are placed so buildingBoxes contains
+        // all footprints and trees won't be placed on roofs.
+        struct Tree { glm::vec3 pos; float trunkH; float trunkR; float foliageSize; };
+        static std::vector<Tree> trees;
+        static bool treesInitialized = false;
+        if (!treesInitialized) {
+            treesInitialized = true;
+            srand(54321);
+            int desiredTrees = 80; // fewer trees as requested
+            int attempts = 0;
+            const float minTreeSpacing = 5.0f; // ensure spacing between trees
+            while ((int)trees.size() < desiredTrees && attempts < desiredTrees * 60) {
+                attempts++;
+                float tx = -100.0f + (rand() % 201);
+                float tz = -100.0f + (rand() % 201);
+
+                // avoid main roads and sidewalks
+                if (fabs(tx) < 22.0f || fabs(tz) < 22.0f) continue;
+
+                // avoid secondary grid roads approximated margin
+                float modTx = fmodf(fabs(tx), 40.0f);
+                if (glm::min(modTx, 40.0f - modTx) < 10.0f) continue;
+                float modTz = fmodf(fabs(tz), 40.0f);
+                if (glm::min(modTz, 40.0f - modTz) < 10.0f) continue;
+
+                // avoid mall area
+                float dxm = tx - 60.0f; float dzm = tz - 20.0f;
+                if (dxm*dxm + dzm*dzm < 40.0f*40.0f) continue;
+
+                // tree size
+                float trunkH = 3.0f + (rand() % 100) / 100.0f * 4.5f; // 3.0 - 7.5
+                float trunkR = 0.25f + (rand() % 100) / 100.0f * 0.6f; // 0.25 - 0.85
+                float foliage = 2.8f + (rand() % 100) / 100.0f * 3.5f; // 2.8 - 6.3
+
+                // clearance from buildings (use buildingBoxes recorded earlier)
+                float clearance = 3.0f;
+                bool collides = false;
+                for (auto &b : buildingBoxes) {
+                    float bx = b.x, bz = b.y, halfW = b.z, halfD = b.w;
+                    // consider foliage radius when checking collisions
+                    if (fabs(tx - bx) < (halfW + foliage * 0.6f + clearance) && fabs(tz - bz) < (halfD + foliage * 0.6f + clearance)) {
+                        collides = true; break;
+                    }
+                }
+                if (collides) continue;
+
+                // spacing to other trees
+                bool tooClose = false;
+                for (const auto &et : trees) {
+                    float dx = tx - et.pos.x; float dz = tz - et.pos.z;
+                    if (dx*dx + dz*dz < minTreeSpacing * minTreeSpacing) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+
+                trees.push_back({glm::vec3(tx, 0.0f, tz), trunkH, trunkR, foliage});
+            }
+        }
+
+        // Draw trees (trunk + foliage)
+        for (const auto &tr : trees) {
+            // trunk
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(tr.pos.x, tr.trunkH / 2.0f, tr.pos.z));
+            model = glm::scale(model, glm::vec3(tr.trunkR, tr.trunkH, tr.trunkR));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.36f, 0.20f, 0.09f));
+            glBindVertexArray(cylinderVAO);
+            glDrawElements(GL_TRIANGLES, 16 * 12, GL_UNSIGNED_INT, 0);
+
+            // foliage (cube blob)
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(tr.pos.x, tr.trunkH + tr.foliageSize / 2.0f, tr.pos.z));
+            model = glm::scale(model, glm::vec3(tr.foliageSize, tr.foliageSize, tr.foliageSize));
+            buildingShader.SetMat4("model", model);
+            float g1 = 0.45f + ((float)((int)tr.foliageSize % 8)) / 24.0f;
+            buildingShader.SetVec3("objectColor", glm::vec3(0.08f, g1, 0.08f));
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
         // draw skybox
@@ -1512,318 +1652,152 @@ void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint c
 {
     glm::mat4 model;
 
-    // Main body
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, car.position);
-    model = glm::scale(model, glm::vec3(car.width, car.height, car.length));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", car.color);
+    // More realistic car composed of several boxes: chassis, cabin, hood, trunk, windows, bumpers
+    float w = car.width;
+    float h = car.height;
+    float l = car.length;
 
+    // Split into chassis and cabin vertically
+    float chassisH = h * 0.55f;
+    float cabinH = h - chassisH;
+
+    // Longitudinal splits: hood, cabin, trunk
+    float hoodL = l * 0.20f;
+    float cabinL = l * 0.55f;
+    float trunkL = l - hoodL - cabinL;
+
+    // Base Y where car.position is the center: bottom at car.position.y - h/2
+    float baseBottom = car.position.y - h * 0.5f;
+
+    // Determine orientation from car.direction (rotate around Y)
+    float yaw = 0.0f;
+    if (glm::length(car.direction) > 0.001f) {
+        glm::vec3 dir = glm::normalize(car.direction);
+        yaw = atan2(dir.x, dir.z); // rotation to align model's +Z with direction
+    }
+
+    glm::mat4 baseModel = glm::mat4(1.0f);
+    baseModel = glm::translate(baseModel, car.position);
+    baseModel = glm::rotate(baseModel, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // Chassis box (low, wide) - positions are local offsets from car.position
+    glm::vec3 chassisLocal = glm::vec3(0.0f, -h * 0.5f + chassisH * 0.5f, 0.0f);
+    model = baseModel;
+    model = glm::translate(model, chassisLocal);
+    model = glm::scale(model, glm::vec3(w, chassisH, l));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", car.color * 0.92f);
     glBindVertexArray(cubeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    // Wheels
-    float wheelRadius = car.width * 0.4f;
-    float wheelWidth = car.width * 0.2f;
-    glm::vec3 wheelColor = glm::vec3(0.2f);
-
-    // Front wheels
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, car.position + glm::vec3(-car.width / 2.0f, -car.height / 2.0f, car.length / 2.0f));
-    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
+    // Cabin box (upper, narrower)
+    glm::vec3 cabinLocal = glm::vec3(0.0f, -h * 0.5f + chassisH + cabinH * 0.5f, 0.0f);
+    model = baseModel;
+    model = glm::translate(model, cabinLocal);
+    model = glm::scale(model, glm::vec3(w * 0.88f, cabinH * 0.95f, cabinL * 0.98f));
     shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", wheelColor);
+    shader.SetVec3("objectColor", car.color);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 
+    // Hood (front) and trunk (rear) slight slopes approximated by boxes
+    glm::vec3 hoodLocal = glm::vec3(0.0f, -h * 0.5f + chassisH * 0.5f + 0.08f, (l * 0.5f - hoodL * 0.5f));
+    model = baseModel;
+    model = glm::translate(model, hoodLocal);
+    model = glm::scale(model, glm::vec3(w * 0.98f, chassisH * 0.6f, hoodL));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", car.color * 0.96f);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    glm::vec3 trunkLocal = glm::vec3(0.0f, -h * 0.5f + chassisH * 0.5f + 0.05f, -(l * 0.5f - trunkL * 0.5f));
+    model = baseModel;
+    model = glm::translate(model, trunkLocal);
+    model = glm::scale(model, glm::vec3(w * 0.98f, chassisH * 0.5f, trunkL));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", car.color * 0.96f);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // Windows (front, side, rear) - slightly transparent look via bluish tint
+    glm::vec3 windowColor = glm::vec3(0.35f, 0.55f, 0.75f);
+    float winThickness = 0.04f;
+    // Front windshield
+    model = baseModel;
+    glm::vec3 fwLocal = glm::vec3(0.0f, cabinLocal.y + cabinH * 0.05f, cabinL * 0.5f - winThickness * 0.5f);
+    model = glm::translate(model, fwLocal);
+    model = glm::scale(model, glm::vec3(w * 0.86f, cabinH * 0.35f, winThickness));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", windowColor);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    // Rear windshield
+    model = baseModel;
+    glm::vec3 rwLocal = glm::vec3(0.0f, cabinLocal.y + cabinH * 0.05f, -cabinL * 0.5f + winThickness * 0.5f);
+    model = glm::translate(model, rwLocal);
+    model = glm::scale(model, glm::vec3(w * 0.86f, cabinH * 0.35f, winThickness));
+    shader.SetMat4("model", model);
+    shader.SetVec3("objectColor", windowColor);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // Side windows (left and right) as thin boxes
+    for (int side = -1; side <= 1; side += 2) {
+        model = baseModel;
+        glm::vec3 swLocal = glm::vec3(side * (w * 0.5f - winThickness * 0.5f), cabinLocal.y, 0.0f);
+        model = glm::translate(model, swLocal);
+        model = glm::scale(model, glm::vec3(winThickness, cabinH * 0.78f, cabinL * 0.92f));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", windowColor);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    // Wheels: better positioned and scaled
+    float wheelRadius = glm::clamp(w * 0.22f, 0.25f, 0.6f);
+    float wheelWidth = glm::max(0.18f, w * 0.22f);
+    glm::vec3 wheelColor = glm::vec3(0.08f, 0.08f, 0.08f);
+    float axleY = -h * 0.5f + wheelRadius; // local Y
+    float axleOffsetX = w * 0.5f - wheelRadius * 0.6f;
+    float axleFrontZ = l * 0.5f - hoodL * 0.4f;
+    float axleBackZ = -l * 0.5f + trunkL * 0.4f;
+
+    // Draw four wheels
+    std::vector<glm::vec3> wheelLocalCenters = {
+        glm::vec3(-axleOffsetX, axleY, axleFrontZ),
+        glm::vec3(axleOffsetX, axleY, axleFrontZ),
+        glm::vec3(-axleOffsetX, axleY, axleBackZ),
+        glm::vec3(axleOffsetX, axleY, axleBackZ)
+    };
     glBindVertexArray(cylinderVAO);
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+    for (const auto &lc : wheelLocalCenters) {
+        model = baseModel;
+        model = glm::translate(model, lc);
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0,0,1)); // align cylinder axis
+        model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
+        shader.SetMat4("model", model);
+        shader.SetVec3("objectColor", wheelColor);
+        glDrawElements(GL_TRIANGLES, 16 * 12, GL_UNSIGNED_INT, 0);
+    }
 
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, car.position + glm::vec3(car.width / 2.0f, -car.height / 2.0f, car.length / 2.0f));
-    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", wheelColor);
-
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-
-    // Back wheels
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, car.position + glm::vec3(-car.width / 2.0f, -car.height / 2.0f, -car.length / 2.0f));
-    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", wheelColor);
-
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, car.position + glm::vec3(car.width / 2.0f, -car.height / 2.0f, -car.length / 2.0f));
-    model = glm::scale(model, glm::vec3(wheelRadius, wheelWidth, wheelRadius));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", wheelColor);
-
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-
-    // --- CAR LAMP GLOW EFFECTS ---
+    // Bumpers / lights: small boxes
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-    // Headlamps (front corners)
+    // Headlamps
     for (int side = -1; side <= 1; side += 2) {
-        glm::vec3 lampPos = car.position + glm::vec3(side * car.width / 2.0f, 0.0f, car.length / 2.0f + 0.2f);
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, lampPos);
-        model = glm::scale(model, glm::vec3(0.4f, 0.2f, 0.6f));
+        glm::vec3 lampLocal = glm::vec3(side * (w * 0.33f), -h * 0.5f + chassisH * 0.4f, l * 0.5f + 0.05f);
+        model = baseModel;
+        model = glm::translate(model, lampLocal);
+        model = glm::scale(model, glm::vec3(0.25f, 0.15f, 0.05f));
         shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 0.7f)); // Headlamp glow
-
+        shader.SetVec3("objectColor", glm::vec3(1.0f, 0.95f, 0.7f));
         glBindVertexArray(cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
-    // Taillamps (rear corners)
+    // Taillamps
     for (int side = -1; side <= 1; side += 2) {
-        glm::vec3 lampPos = car.position + glm::vec3(side * car.width / 2.0f, 0.0f, -car.length / 2.0f - 0.2f);
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, lampPos);
-        model = glm::scale(model, glm::vec3(0.3f, 0.15f, 0.4f));
+        glm::vec3 lampLocal = glm::vec3(side * (w * 0.33f), -h * 0.5f + chassisH * 0.4f, -l * 0.5f - 0.05f);
+        model = baseModel;
+        model = glm::translate(model, lampLocal);
+        model = glm::scale(model, glm::vec3(0.22f, 0.12f, 0.05f));
         shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(1.0f, 0.1f, 0.1f)); // Taillamp glow
-
+        shader.SetVec3("objectColor", glm::vec3(1.0f, 0.12f, 0.12f));
         glBindVertexArray(cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
     glDisable(GL_BLEND);
-}
-
-// Add renderShoppingMallComplex implementation
-void renderShoppingMallComplex(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO)
-{
-    glm::mat4 model;
-    // Mall parameters
-    glm::vec3 mallPos = glm::vec3(60.0f, 0.0f, 60.0f);
-    float mallWidth = 60.0f;
-    float mallDepth = 40.0f;
-    float mallHeight = 15.0f;
-
-    // Main mall building
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(mallPos.x, mallHeight / 2.0f, mallPos.z));
-    model = glm::scale(model, glm::vec3(mallWidth, mallHeight, mallDepth));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", glm::vec3(0.85f, 0.85f, 0.9f));
-    glBindVertexArray(cubeVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    // Mall entrance canopy
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(mallPos.x, 2.0f, mallPos.z - mallDepth/2.0f - 3.0f));
-    model = glm::scale(model, glm::vec3(20.0f, 1.0f, 6.0f));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", glm::vec3(0.2f, 0.2f, 0.25f));
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    // Row of small shops in front of mall
-    int shopCount = 6;
-    float shopWidth = mallWidth / (float)shopCount - 1.0f;
-    float shopDepth = 8.0f;
-    float shopHeight = 6.0f;
-    float firstShopX = mallPos.x - mallWidth/2.0f + shopWidth/2.0f + 1.0f;
-    for (int i = 0; i < shopCount; ++i) {
-        float sx = firstShopX + i * (shopWidth + 1.0f);
-        float sz = mallPos.z - mallDepth/2.0f - shopDepth/2.0f - 10.0f;
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(sx, shopHeight/2.0f, sz));
-        model = glm::scale(model, glm::vec3(shopWidth, shopHeight, shopDepth));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.85f));
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Shop glass window (front)
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(sx, shopHeight/2.0f - 0.5f, sz + shopDepth/2.0f + 0.01f));
-        model = glm::scale(model, glm::vec3(shopWidth*0.8f, shopHeight*0.6f, 0.05f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.6f, 0.8f, 0.95f));
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Shop signage
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(sx, shopHeight - 0.6f, sz + shopDepth/2.0f + 0.02f));
-        model = glm::scale(model, glm::vec3(shopWidth*0.6f, 0.6f, 0.02f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.1f, 0.4f, 0.8f));
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
-
-    // Parking lot surface in front of shops
-    float parkingWidth = mallWidth + 20.0f;
-    float parkingDepth = 30.0f;
-    glm::vec3 parkingCenter = glm::vec3(mallPos.x, 0.01f, mallPos.z - mallDepth/2.0f - 10.0f);
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(parkingCenter.x, 0.02f, parkingCenter.z));
-    model = glm::scale(model, glm::vec3(parkingWidth, 0.04f, parkingDepth));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", glm::vec3(0.15f, 0.15f, 0.15f));
-    glBindVertexArray(cubeVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    // Parking lines
-    int spacesPerRow = 10;
-    float spaceWidth = (parkingWidth - 10.0f) / (float)spacesPerRow;
-    float startLineX = parkingCenter.x - parkingWidth/2.0f + 5.0f + spaceWidth/2.0f;
-    float lineZ = parkingCenter.z - parkingDepth/2.0f + 2.0f;
-    for (int i = 0; i < spacesPerRow; ++i) {
-        float lx = startLineX + i * spaceWidth;
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(lx, 0.05f, lineZ));
-        model = glm::scale(model, glm::vec3(spaceWidth*0.9f, 0.02f, 0.12f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.95f, 0.95f, 0.95f));
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
-
-    // Render parked cars
-    for (const auto& pcar : parkedCars) {
-        renderRealisticCar(pcar, shader, cubeVAO, cylinderVAO);
-    }
-}
-
-// === PEDESTRIAN FUNCTIONS IMPLEMENTATION ===
-void spawnPedestrians(int count) {
-    pedestrians.clear();
-    srand(98765); // fixed seed for reproducibility
-    int spawned = 0;
-    int attempts = 0;
-    while (spawned < count && attempts < count * 10) {
-        attempts++;
-        float x = -80.0f + (rand() % 161);
-        float z = -80.0f + (rand() % 161);
-        // Avoid roads and mall area
-        if ((x >= -10.0f && x <= 10.0f) || (z >= -10.0f && z <= 10.0f)) continue;
-        if (fmod(fabs(x), 40.0f) < 1.0f || fmod(fabs(z), 40.0f) < 1.0f) continue;
-        float dx = x - 60.0f; float dz = z - 20.0f;
-        if (dx*dx + dz*dz < 40.0f*40.0f) continue;
-        float angle = (rand() % 360) * (M_PI / 180.0f);
-        glm::vec3 dir = glm::normalize(glm::vec3(cos(angle), 0.0f, sin(angle)));
-        float speed = 0.7f + (rand() % 100) / 100.0f * 0.9f;
-        float dur = 1.0f + (rand() % 100) / 100.0f * 4.0f;
-        glm::vec3 col = glm::vec3(0.7f - (rand()%40)/100.0f, 0.6f - (rand()%30)/100.0f, 0.5f - (rand()%30)/100.0f);
-        pedestrians.emplace_back(glm::vec3(x, 0.0f, z), dir, speed, dur, col);
-        spawned++;
-    }
-}
-
-void updatePedestrians(float deltaTime) {
-    for (auto &p : pedestrians) {
-        p.walkTimer += deltaTime;
-        // Advance walk cycle phase based on speed
-        p.walkCyclePhase += deltaTime * p.speed * 3.0f; // 3.0f: controls walk speed
-        if (p.walkCyclePhase > 2.0f * M_PI) p.walkCyclePhase -= 2.0f * M_PI;
-        if (p.walkTimer > p.walkDuration) {
-            float angle = (rand() % 360) * (M_PI / 180.0f);
-            p.direction = glm::normalize(glm::vec3(cos(angle),0.0f,sin(angle)));
-            p.walkDuration = 1.0f + (rand() % 100) / 100.0f * 4.0f;
-            p.walkTimer = 0.0f;
-        }
-        glm::vec3 next = p.position + p.direction * p.speed * deltaTime;
-        if (next.x < -120.0f || next.x > 120.0f || next.z < -120.0f || next.z > 120.0f) {
-            p.direction = -p.direction;
-            continue;
-        }
-        // Avoid roads and mall area
-        if (!((next.x >= -10.0f && next.x <= 10.0f) || (next.z >= -10.0f && next.z <= 10.0f) ||
-              fmod(fabs(next.x), 40.0f) < 1.0f || fmod(fabs(next.z), 40.0f) < 1.0f ||
-              ((next.x-60.0f)*(next.x-60.0f)+(next.z-20.0f)*(next.z-20.0f) < 40.0f*40.0f))) {
-            p.position = next;
-        } else {
-            float angle = (rand() % 180 - 90) * (M_PI/180.0f);
-            glm::mat4 rot = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0,1,0));
-            glm::vec4 d = rot * glm::vec4(p.direction, 0.0f);
-            p.direction = glm::normalize(glm::vec3(d));
-        }
-    }
-}
-
-void renderPedestrian(const Pedestrian& p, Shader& shader, GLuint cubeVAO, GLuint /*cylinderVAO*/) {
-    glm::mat4 model;
-    float facing = atan2(p.direction.x, p.direction.z);
-    float bob = 0.03f * sin(2.0f * p.walkCyclePhase);
-
-    // Minecraft-like proportions
-    float torsoHeight = p.bodyHeight * 0.55f;
-    float torsoWidth = 0.28f;
-    float torsoDepth = 0.14f;
-    float headSize = 0.22f;
-    float armLength = torsoHeight * 0.95f;
-    float armWidth = 0.10f;
-    float armDepth = 0.10f;
-    float legLength = p.bodyHeight * 0.45f;
-    float legWidth = 0.11f;
-    float legDepth = 0.11f;
-    float handSize = 0.08f;
-
-    // Torso (cube)
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(p.position.x, legLength + torsoHeight/2.0f + bob, p.position.z));
-    model = glm::rotate(model, facing, glm::vec3(0,1,0));
-    model = glm::scale(model, glm::vec3(torsoWidth, torsoHeight, torsoDepth));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", p.color);
-    glBindVertexArray(cubeVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    // Head (cube)
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(p.position.x, legLength + torsoHeight + headSize/2.0f + 0.03f + bob, p.position.z));
-    model = glm::rotate(model, facing, glm::vec3(0,1,0));
-    model = glm::scale(model, glm::vec3(headSize, headSize, headSize));
-    shader.SetMat4("model", model);
-    shader.SetVec3("objectColor", glm::vec3(1.0f, 0.85f, 0.75f));
-    glBindVertexArray(cubeVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    // Arms (cubes, animated, with hands)
-    float armSwing = glm::radians(45.0f) * sin(p.walkCyclePhase); // More pronounced pendulum swing
-    for (int s = -1; s <=1; s+=2) {
-        // Shoulder position: at top of torso, below head
-        float shoulderY = legLength + torsoHeight - armWidth/2.0f + bob;
-        float shoulderX = p.position.x + s * (torsoWidth/2.0f + armWidth/2.0f);
-        glm::mat4 armModel = glm::mat4(1.0f);
-        armModel = glm::translate(armModel, glm::vec3(shoulderX, shoulderY, p.position.z));
-        armModel = glm::rotate(armModel, facing, glm::vec3(0,1,0));
-        // Pendulum swing: rotate at shoulder, then move arm down
-        armModel = glm::rotate(armModel, s*armSwing, glm::vec3(1,0,0));
-        armModel = glm::translate(armModel, glm::vec3(0, -armLength/2.0f, 0));
-        armModel = glm::scale(armModel, glm::vec3(armWidth, armLength, armDepth));
-        shader.SetMat4("model", armModel);
-        shader.SetVec3("objectColor", p.color * 0.9f);
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Hand (cube at end of arm)
-        glm::mat4 handModel = glm::mat4(1.0f);
-        handModel = glm::translate(handModel, glm::vec3(shoulderX, shoulderY, p.position.z));
-        handModel = glm::rotate(handModel, facing, glm::vec3(0,1,0));
-        handModel = glm::rotate(handModel, s*armSwing, glm::vec3(1,0,0));
-        handModel = glm::translate(handModel, glm::vec3(0, -armLength, 0));
-        handModel = glm::scale(handModel, glm::vec3(handSize, handSize, handSize));
-        shader.SetMat4("model", handModel);
-        shader.SetVec3("objectColor", glm::vec3(1.0f, 0.85f, 0.75f));
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
-    // Legs (cubes, animated)
-    float legSwing = glm::radians(35.0f) * sin(p.walkCyclePhase + M_PI);
-    for (int s = -1; s <=1; s+=2) {
-        model = glm::mat4(1.0f);
-        float hipY = legLength/2.0f + bob;
-        float hipX = p.position.x + s * (torsoWidth/2.0f - legWidth/2.0f);
-        model = glm::translate(model, glm::vec3(hipX, hipY, p.position.z));
-        model = glm::rotate(model, facing, glm::vec3(0,1,0));
-        model = glm::translate(model, glm::vec3(0, legLength/2.0f, 0));
-        model = glm::rotate(model, s*legSwing, glm::vec3(1,0,0));
-        model = glm::translate(model, glm::vec3(0, -legLength/2.0f, 0));
-        model = glm::scale(model, glm::vec3(legWidth, legLength, legDepth));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", p.color * 0.7f);
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
 }

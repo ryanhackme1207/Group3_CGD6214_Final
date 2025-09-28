@@ -134,6 +134,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Model.cpp" />
+    <ClCompile Include="Pedestrians.cpp" />
     <ClCompile Include="SceneGraph.cpp" />
     <ClCompile Include="SceneNode.cpp" />
     <ClCompile Include="Shader.cpp" />
@@ -145,6 +146,7 @@
     <ClInclude Include="LODManager.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Model.h" />
+    <ClInclude Include="Pedestrians.h" />
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="SceneNode.h" />
     <ClInclude Include="Shader.h" />
