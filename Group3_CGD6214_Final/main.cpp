@@ -1265,14 +1265,30 @@ int main()
         // renderTrees(buildingShader, cubeVAO, cylinderVAO); // removed
 
         // === RENDER REALISTIC MOVING CARS ===
-        for (const auto& car : cars) {
-            renderRealisticCar(car, buildingShader, cubeVAO, cylinderVAO);
-        }
+        // Spatial partitioning: build quadtrees for moving cars and pedestrians and query items near camera
+        {
+            // define bounds slightly larger than world size used elsewhere
+            const float worldHalf = 180.0f;
+            QuadNode carsRoot(glm::vec2(0.0f, 0.0f), worldHalf);
+            for (size_t i = 0; i < cars.size(); ++i) carsRoot.Insert(cars[i].position, static_cast<int>(i));
 
-        // Render pedestrians
-        updatePedestrians(deltaTime);
-        for (const auto& p : pedestrians) {
-            renderPedestrian(p, buildingShader, cubeVAO, cylinderVAO);
+            QuadNode pedsRoot(glm::vec2(0.0f, 0.0f), worldHalf);
+            for (size_t i = 0; i < pedestrians.size(); ++i) pedsRoot.Insert(pedestrians[i].position, static_cast<int>(i));
+
+            // Query radius based on camera distance (LOD). Use a reasonable view radius.
+            float viewRadius = 60.0f; // meters
+            glm::vec2 cam2d = glm::vec2(camera.GetPosition().x, camera.GetPosition().z);
+            std::vector<int> nearbyCarIds; nearbyCarIds.reserve(64);
+            carsRoot.QueryRange(cam2d, viewRadius, nearbyCarIds);
+            for (int id : nearbyCarIds) {
+                if (id >= 0 && id < (int)cars.size()) renderRealisticCar(cars[id], buildingShader, cubeVAO, cylinderVAO);
+            }
+
+            std::vector<int> nearbyPedIds; nearbyPedIds.reserve(128);
+            pedsRoot.QueryRange(cam2d, viewRadius, nearbyPedIds);
+            for (int id : nearbyPedIds) {
+                if (id >= 0 && id < (int)pedestrians.size()) renderPedestrian(pedestrians[id], buildingShader, cubeVAO, cylinderVAO);
+            }
         }
 
         // Render shopping mall complex (shops + parking lot + parked cars)
