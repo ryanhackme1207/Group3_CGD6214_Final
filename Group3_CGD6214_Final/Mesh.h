@@ -19,6 +19,9 @@ public:
 
     // Set or replace texture after creation
     void SetTexture(const std::string& texturePath);
+    void SetNormalMap(const std::string& path);
+    void SetSpecularMap(const std::string& path);
+    void SetEmissionMap(const std::string& path);
 
     static Mesh CreateCube();
 
@@ -45,8 +48,10 @@ private:
     GLuint VBO;
     GLuint EBO;
     unsigned int indexCount;
-    GLuint textureID; // 0 if none
+    GLuint textureID; // diffuse (0 if none)
     GLuint normalMapID; // normal map texture (0 if none)
+    GLuint specularMapID; // specular map texture (0 if none)
+    GLuint emissionMapID; // emission map texture (0 if none)
 
     // CPU-side mesh
     std::vector<Vertex> cpuVertices;
@@ -55,8 +60,10 @@ private:
     // helper to load texture
     GLuint LoadTextureFromFile(const std::string& path);
 
-    // helper to attempt loading normal map using naming conventions
+    // helper to attempt loading normal/specular/emission maps using naming conventions
     GLuint LoadAssociatedNormalMap(const std::string& diffusePath);
+    GLuint LoadAssociatedSpecularMap(const std::string& diffusePath);
+    GLuint LoadAssociatedEmissionMap(const std::string& diffusePath);
 
     // upload CPU mesh to GPU buffers
     void UpdateGPU();

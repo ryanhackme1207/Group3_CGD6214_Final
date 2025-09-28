@@ -1765,6 +1765,7 @@ void main() {
 
                 // rotation from +Y to dir
                 glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+                if (fabs(glm::dot(up, dir)) > 0.99f) up = glm::vec3(1.0f, 0.0f, 0.0f);
                 glm::mat4 rot = glm::mat4(1.0f);
                 float d = glm::dot(up, dir);
                 if (d > 0.9999f) {
@@ -1983,8 +1984,8 @@ void processInput(GLFWwindow* window)
 
 GLuint createCube()
 {
-    // Cube vertices with normals and texture coordinates
-    static const float vertices[] = {
+    // original interleaved data: pos(3), normal(3), texcoord(2)
+    static const float srcVertices[] = {
         // positions          // normals           // texture coords
         -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  0.0f,
          0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
@@ -2029,26 +2030,67 @@ GLuint createCube()
         -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f
     };
 
+    const size_t SRC_STRIDE = 8; // floats per src vertex
+    const size_t SRC_COUNT = sizeof(srcVertices) / (SRC_STRIDE * sizeof(float));
+
+    struct V { glm::vec3 pos; glm::vec3 norm; glm::vec2 uv; glm::vec3 tangent; };
+    std::vector<V> verts; verts.resize(SRC_COUNT);
+
+    for (size_t i = 0; i < SRC_COUNT; ++i) {
+        const float* s = &srcVertices[i * SRC_STRIDE];
+        verts[i].pos = glm::vec3(s[0], s[1], s[2]);
+        verts[i].norm = glm::vec3(s[3], s[4], s[5]);
+        verts[i].uv = glm::vec2(s[6], s[7]);
+        verts[i].tangent = glm::vec3(0.0f);
+    }
+
+    // compute per-triangle tangents (tri list)
+    for (size_t i = 0; i + 2 < SRC_COUNT; i += 3) {
+        V &v0 = verts[i+0]; V &v1 = verts[i+1]; V &v2 = verts[i+2];
+        glm::vec3 edge1 = v1.pos - v0.pos;
+        glm::vec3 edge2 = v2.pos - v0.pos;
+        glm::vec2 deltaUV1 = v1.uv - v0.uv;
+        glm::vec2 deltaUV2 = v2.uv - v0.uv;
+        float denom = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+        float f = (fabs(denom) > 1e-8f) ? (1.0f / denom) : 0.0f;
+        glm::vec3 tangent = f * (edge1 * deltaUV2.y - edge2 * deltaUV1.y);
+        v0.tangent += tangent; v1.tangent += tangent; v2.tangent += tangent;
+    }
+    for (auto &v : verts) {
+        if (glm::length(v.tangent) > 1e-6f) v.tangent = glm::normalize(v.tangent);
+        else {
+            // fallback tangent: perpendicular to normal
+            glm::vec3 n = glm::normalize(v.norm);
+            glm::vec3 t = glm::normalize(glm::cross(glm::vec3(0.0f,1.0f,0.0f), n));
+            if (glm::length(t) < 1e-3f) t = glm::vec3(1.0f, 0.0f, 0.0f);
+            v.tangent = t;
+        }
+    }
+
+    // build interleaved buffer pos(3), normal(3), uv(2), tangent(3)
+    std::vector<float> flat; flat.reserve(SRC_COUNT * 11);
+    for (const auto &v : verts) {
+        flat.push_back(v.pos.x); flat.push_back(v.pos.y); flat.push_back(v.pos.z);
+        flat.push_back(v.norm.x); flat.push_back(v.norm.y); flat.push_back(v.norm.z);
+        flat.push_back(v.uv.x); flat.push_back(v.uv.y);
+        flat.push_back(v.tangent.x); flat.push_back(v.tangent.y); flat.push_back(v.tangent.z);
+    }
+
     GLuint VBO, VAO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
 
     glBindVertexArray(VAO);
-
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, flat.size() * sizeof(float), flat.data(), GL_STATIC_DRAW);
 
-    // Position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+    GLsizei stride = 11 * sizeof(float);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float))); glEnableVertexAttribArray(3);
 
-    // Normal attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // Texture coordinate attribute
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
+    glBindVertexArray(0);
 
     return VAO;
 }

@@ -9,8 +9,8 @@
 
 #include "stb_image.h"
 
-// single default constructor, initialize normalMapID too
-Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0) {}
+// single default constructor, initialize map IDs too
+Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0), specularMapID(0), emissionMapID(0) {}
 
 static Mesh::Vertex ConvertFromFlat(const float* base) {
     Mesh::Vertex v;
@@ -29,7 +29,7 @@ static void ConvertToFlat(const Mesh::Vertex& v, float* out) {
 }
 
 Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices)
-    : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0)
+    : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0), specularMapID(0), emissionMapID(0)
 {
     if (vertices.empty()) return;
 
@@ -76,7 +76,7 @@ Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& 
     UpdateGPU();
 }
 
-// New constructor that attempts to load a texture
+// New constructor that attempts to load a diffuse texture and associated maps
 Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices, const std::string& texturePath)
     : Mesh(vertices, indices)
 {
@@ -85,17 +85,19 @@ Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& 
         if (textureID == 0) {
             std::cerr << "Warning: failed to load texture: " << texturePath << std::endl;
         } else {
-            // attempt to load associated normal map using naming convention: diffuse.png -> diffuse_n.png or _normal
+            // attempt to load associated normal, specular and emission maps using naming conventions
             normalMapID = LoadAssociatedNormalMap(texturePath);
-            if (normalMapID == 0) {
-                // not fatal
-            }
+            specularMapID = LoadAssociatedSpecularMap(texturePath);
+            emissionMapID = LoadAssociatedEmissionMap(texturePath);
+            // missing maps are non-fatal
         }
     }
 }
 
 Mesh::~Mesh()
 {
+    if (emissionMapID) glDeleteTextures(1, &emissionMapID);
+    if (specularMapID) glDeleteTextures(1, &specularMapID);
     if (normalMapID) glDeleteTextures(1, &normalMapID);
     if (textureID) glDeleteTextures(1, &textureID);
     if (EBO) glDeleteBuffers(1, &EBO);
@@ -110,11 +112,32 @@ void Mesh::SetTexture(const std::string& texturePath)
         textureID = 0;
     }
     if (normalMapID) { glDeleteTextures(1, &normalMapID); normalMapID = 0; }
+    if (specularMapID) { glDeleteTextures(1, &specularMapID); specularMapID = 0; }
+    if (emissionMapID) { glDeleteTextures(1, &emissionMapID); emissionMapID = 0; }
     if (!texturePath.empty()) {
         textureID = LoadTextureFromFile(texturePath);
         if (textureID == 0) std::cerr << "SetTexture: failed to load " << texturePath << std::endl;
-        else normalMapID = LoadAssociatedNormalMap(texturePath);
+        else {
+            normalMapID = LoadAssociatedNormalMap(texturePath);
+            specularMapID = LoadAssociatedSpecularMap(texturePath);
+            emissionMapID = LoadAssociatedEmissionMap(texturePath);
+        }
     }
+}
+
+void Mesh::SetNormalMap(const std::string& path) {
+    if (normalMapID) { glDeleteTextures(1, &normalMapID); normalMapID = 0; }
+    if (!path.empty()) normalMapID = LoadTextureFromFile(path);
+}
+
+void Mesh::SetSpecularMap(const std::string& path) {
+    if (specularMapID) { glDeleteTextures(1, &specularMapID); specularMapID = 0; }
+    if (!path.empty()) specularMapID = LoadTextureFromFile(path);
+}
+
+void Mesh::SetEmissionMap(const std::string& path) {
+    if (emissionMapID) { glDeleteTextures(1, &emissionMapID); emissionMapID = 0; }
+    if (!path.empty()) emissionMapID = LoadTextureFromFile(path);
 }
 
 void Mesh::UpdateGPU()
@@ -188,6 +211,26 @@ void Mesh::Draw(Shader& shader, const glm::mat4& modelMatrix)
         shader.SetBool("useNormalMap", false);
     }
 
+    // bind specular map
+    if (specularMapID) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, specularMapID);
+        shader.SetInt("specularMap", 2);
+        shader.SetBool("useSpecularMap", true);
+    } else {
+        shader.SetBool("useSpecularMap", false);
+    }
+
+    // bind emission map
+    if (emissionMapID) {
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, emissionMapID);
+        shader.SetInt("emissionMap", 3);
+        shader.SetBool("useEmissionMap", true);
+    } else {
+        shader.SetBool("useEmissionMap", false);
+    }
+
     glBindVertexArray(VAO);
     if (indexCount > 0) {
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
@@ -201,6 +244,14 @@ void Mesh::Draw(Shader& shader, const glm::mat4& modelMatrix)
     if (normalMapID) {
         glBindTexture(GL_TEXTURE_2D, 0);
         shader.SetBool("useNormalMap", false);
+    }
+    if (specularMapID) {
+        glBindTexture(GL_TEXTURE_2D, 0);
+        shader.SetBool("useSpecularMap", false);
+    }
+    if (emissionMapID) {
+        glBindTexture(GL_TEXTURE_2D, 0);
+        shader.SetBool("useEmissionMap", false);
     }
 }
 
@@ -247,6 +298,46 @@ GLuint Mesh::LoadAssociatedNormalMap(const std::string& diffusePath)
     candidates.push_back(base + "_normal" + ext);
     candidates.push_back(base + "-n" + ext);
     candidates.push_back(base + "-normal" + ext);
+    for (const auto &c : candidates) {
+        std::ifstream f(c.c_str(), std::ios::binary);
+        if (f.good()) { f.close(); return LoadTextureFromFile(c); }
+    }
+    return 0;
+}
+
+// Attempt to load associated specular map using naming conventions (e.g. diffuse.png -> diffuse_s.png or _specular.png)
+GLuint Mesh::LoadAssociatedSpecularMap(const std::string& diffusePath)
+{
+    std::vector<std::string> candidates;
+    size_t dot = diffusePath.find_last_of('.');
+    if (dot == std::string::npos) return 0;
+    std::string base = diffusePath.substr(0, dot);
+    std::string ext = diffusePath.substr(dot);
+    candidates.push_back(base + "_s" + ext);
+    candidates.push_back(base + "_spec" + ext);
+    candidates.push_back(base + "_specular" + ext);
+    candidates.push_back(base + "-s" + ext);
+    candidates.push_back(base + "-specular" + ext);
+    for (const auto &c : candidates) {
+        std::ifstream f(c.c_str(), std::ios::binary);
+        if (f.good()) { f.close(); return LoadTextureFromFile(c); }
+    }
+    return 0;
+}
+
+// Attempt to load associated emission map using naming conventions (e.g. diffuse.png -> diffuse_e.png or _emission.png)
+GLuint Mesh::LoadAssociatedEmissionMap(const std::string& diffusePath)
+{
+    std::vector<std::string> candidates;
+    size_t dot = diffusePath.find_last_of('.');
+    if (dot == std::string::npos) return 0;
+    std::string base = diffusePath.substr(0, dot);
+    std::string ext = diffusePath.substr(dot);
+    candidates.push_back(base + "_e" + ext);
+    candidates.push_back(base + "_emit" + ext);
+    candidates.push_back(base + "_emission" + ext);
+    candidates.push_back(base + "-e" + ext);
+    candidates.push_back(base + "-emission" + ext);
     for (const auto &c : candidates) {
         std::ifstream f(c.c_str(), std::ios::binary);
         if (f.good()) { f.close(); return LoadTextureFromFile(c); }

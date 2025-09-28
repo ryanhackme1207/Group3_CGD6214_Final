@@ -72,6 +72,12 @@ uniform bool hasTexture;
 uniform sampler2D normalMap;
 uniform bool useNormalMap;
 
+// Specular and emission maps
+uniform sampler2D specularMap;
+uniform bool useSpecularMap;
+uniform sampler2D emissionMap;
+uniform bool useEmissionMap;
+
 // Shadow map for the primary spotlight (index 0)
 uniform sampler2D spotShadowMap;
 uniform mat4 spotLightSpace;
@@ -132,6 +138,14 @@ void main()
     }
     vec3 objectColorFinal = texColor * objectColor;
 
+    // sample specular and emission maps when available
+    vec3 specMapColor = vec3(1.0);
+    if (useSpecularMap) specMapColor = texture(specularMap, TexCoord).rgb;
+    float specularFactor = (specMapColor.r + specMapColor.g + specMapColor.b) / 3.0; // luminance-like
+
+    vec3 emissionColor = vec3(0.0);
+    if (useEmissionMap) emissionColor = texture(emissionMap, TexCoord).rgb;
+
     // combine bumpIntensity and groundBumpIntensity for effective bump
     float effectiveBump = clamp(groundBumpIntensity + bumpIntensity, 0.0, 1.0);
 
@@ -156,7 +170,7 @@ void main()
         float diff = max(dot(norm, L), 0.0);
         vec3 diffuse = diff * lightColor;
 
-        float specularStrength = 0.6;
+        float specularStrength = 0.6 * specularFactor; // modulated by specular map
         vec3 reflectDir = reflect(-L, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
         vec3 specular = specularStrength * spec * lightColor;
@@ -169,7 +183,7 @@ void main()
         float diff = max(dot(norm, L), 0.0);
         vec3 diffuse = diff * lightColor;
 
-        float specularStrength = 0.6;
+        float specularStrength = 0.6 * specularFactor;
         vec3 reflectDir = reflect(-L, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
         vec3 specular = specularStrength * spec * lightColor;
@@ -183,7 +197,7 @@ void main()
         vec3 lightDirP = normalize(pl.position - FragPos);
         float diff = max(dot(norm, lightDirP), 0.0);
         // Specular
-        float specularStrength = 0.6;
+        float specularStrength = 0.6 * specularFactor;
         vec3 reflectDir = reflect(-lightDirP, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
         vec3 specular = specularStrength * spec * pl.color * pl.intensity;
@@ -215,7 +229,7 @@ void main()
         float intensity = clamp((theta - sl.outerCutoff) / max(epsilon, 0.001), 0.0, 1.0);
 
         // Specular
-        float specularStrength = 0.6;
+        float specularStrength = 0.6 * specularFactor;
         vec3 reflectDir = reflect(-lightDirS, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
         vec3 specular = specularStrength * spec * sl.color * sl.intensity * intensity;
@@ -235,6 +249,9 @@ void main()
 
         result += (ambient + diffuse + specular) * objectColorFinal;
     }
+
+    // Add emission term (unaffected by lighting)
+    result += emissionColor;
 
     // Slight fog for distance
     float distanceToCamera = length(viewPos - FragPos);
