@@ -154,6 +154,9 @@
     <None Include="shaders\basic.vert" />
     <None Include="shaders\ground.frag" />
     <None Include="shaders\Lighting.frag" />
+    <None Include="shaders\normalmap.frag" />
+    <None Include="shaders\shadowmap.frag" />
+    <None Include="shaders\shadowmap.vert" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="textures\nx.jpg" />
