@@ -85,6 +85,10 @@ void Mesh::Draw(Shader& shader, const glm::mat4& modelMatrix)
         shader.SetBool("hasTexture", true);
     }
     else {
+        // Ensure non-textured meshes are visible by providing a default object color
+        // If the caller previously set a specific objectColor, this will override it only for meshes
+        // without textures to avoid rendering them completely black (default uniform value is vec3(0)).
+        shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 1.0f));
         shader.SetBool("hasTexture", false);
     }
     glBindVertexArray(VAO);

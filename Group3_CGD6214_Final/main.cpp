@@ -9,9 +9,11 @@ using namespace glm;
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <random>
 #include "Camera.h"
 #include "Shader.h"
 #include "Mesh.h"
+#include "main.h" // correct include (lowercase) to expose getGroundIndexCount()
 #include "Model.h"
 
 #include "SceneGraph.h"
@@ -267,6 +269,254 @@ GLuint createCube();
 GLuint createGround();
 GLuint createTriangularRoof();
 GLuint createCylinder();
+int getGroundIndexCount(); // prototype for procedural ground index count provided by SceneHelpers.cpp
+
+// Data structures for one-time city generation
+struct BuildingInfo {
+    glm::vec3 pos;
+    float width, depth, height;
+    glm::vec3 color;
+    bool hasRoof;
+    glm::vec3 roofColor;
+    int buildingType;
+};
+struct SmallTreeInfo {
+    glm::vec3 pos;
+    float trunkH, trunkR, foliage;
+};
+
+// Generate city layout (fills buildings, smallTrees and buildingBoxes). Deterministic using given seed.
+static void generateCity(std::vector<BuildingInfo>& buildings, std::vector<SmallTreeInfo>& smallTrees, std::vector<glm::vec4>& buildingBoxes, unsigned int seed = 12345u) {
+    std::mt19937 rng(seed);
+    auto rndf = [&](float a, float b) { return std::uniform_real_distribution<float>(a,b)(rng); };
+    auto rndi = [&](int a, int b) { return std::uniform_int_distribution<int>(a,b)(rng); };
+
+    buildings.clear(); smallTrees.clear(); buildingBoxes.clear();
+
+    // Iconic towers (fixed)
+    BuildingInfo kl; kl.pos = glm::vec3(25.0f, 0.0f, 25.0f); kl.width = 3.0f; kl.depth = 3.0f; kl.height = 421.0f; kl.color = glm::vec3(0.8f,0.8f,0.9f); kl.hasRoof = false; kl.buildingType = 4; buildings.push_back(kl);
+    buildingBoxes.emplace_back(glm::vec4(25.0f, 25.0f, kl.width*0.5f, kl.height*0.5f));
+
+    BuildingInfo eiff; eiff.pos = glm::vec3(-30.0f,0.0f,-30.0f); eiff.width = 12.0f; eiff.depth = 12.0f; eiff.height = 200.0f; eiff.color = glm::vec3(0.6f,0.5f,0.4f); eiff.hasRoof = false; eiff.buildingType = 3; buildings.push_back(eiff);
+    buildingBoxes.emplace_back(glm::vec4(-30.0f,-30.0f,eiff.width*0.5f,eiff.height*0.5f));
+
+    // Residential grid
+    glm::vec3 mallCenter = glm::vec3(60.0f,0.0f,60.0f);
+    for (int x = -100; x <= 100; x += 10) {
+        for (int z = -100; z <= 100; z += 10) {
+            if ((x >= -15 && x <= 15) || (z >= -15 && z <= 15)) continue;
+            if (fmod(fabs((float)x), 40.0f) < 2.0f || fmod(fabs((float)z), 40.0f) < 2.0f) continue;
+            float dxMall = x - 60.0f; float dzMall = z - 20.0f;
+            if (dxMall * dxMall + dzMall * dzMall < 35.0f * 35.0f) continue;
+
+            float actualX = x + rndf(-2.0f,2.0f);
+            float actualZ = z + rndf(-2.0f,2.0f);
+
+            float distCenter = sqrtf((float)(x*x + z*z));
+            int buildingType = 0;
+            int r = rndi(0,99);
+            if (distCenter < 40.0f) {
+                if (r < 20) buildingType = 4; else if (r < 55) buildingType = 3; else if (r < 80) buildingType = 2; else buildingType = 1;
+            } else if (distCenter < 80.0f) {
+                if (r < 10) buildingType = 4; else if (r < 40) buildingType = 3; else if (r < 75) buildingType = 2; else buildingType = 0;
+            } else {
+                if (r < 50) buildingType = 0; else if (r < 75) buildingType = 2; else buildingType = 1;
+            }
+
+            BuildingInfo b;
+            b.buildingType = buildingType;
+            b.hasRoof = false;
+            switch (buildingType) {
+            case 0: b.width = rndf(5.5f,10.5f); b.depth = rndf(6.5f,11.5f); b.height = rndf(4.5f,8.5f); b.hasRoof = (rndi(0,99) < 85); break;
+            case 1: b.width = rndf(9.0f,15.0f); b.depth = rndf(7.0f,11.0f); b.height = rndf(6.0f,11.0f); b.hasRoof = (rndi(0,99) < 75); break;
+            case 2: b.width = rndf(4.5f,7.5f); b.depth = rndf(8.5f,14.5f); b.height = rndf(7.0f,13.0f); b.hasRoof = (rndi(0,99) < 50); break;
+            case 3: b.width = rndf(10.0f,18.0f); b.depth = rndf(9.0f,17.0f); b.height = rndf(10.0f,20.0f); b.hasRoof = (rndi(0,99) < 20); break;
+            case 4: b.width = rndf(10.0f,36.0f); b.depth = rndf(10.0f,36.0f); b.height = rndf(30.0f,240.0f); b.hasRoof = (rndi(0,99) < 10); break;
+            }
+            b.pos = glm::vec3(actualX, 0.0f, actualZ);
+            // color palette
+            glm::vec3 houseColors[] = { glm::vec3(0.9f,0.9f,0.85f), glm::vec3(0.8f,0.7f,0.6f), glm::vec3(0.7f,0.6f,0.5f), glm::vec3(0.85f,0.8f,0.75f), glm::vec3(0.9f,0.85f,0.7f), glm::vec3(0.75f,0.7f,0.65f), glm::vec3(0.6f,0.5f,0.4f), glm::vec3(0.8f,0.75f,0.7f)};
+            b.color = houseColors[rndi(0,7)];
+            b.roofColor = glm::vec3(rndf(0.25f,0.5f), rndf(0.15f,0.35f), rndf(0.1f,0.3f));
+
+            // clamp and register
+            b.width = glm::min(b.width, 40.0f);
+            b.depth = glm::min(b.depth, 40.0f);
+
+            float halfW = b.width * 0.5f; float halfD = b.depth * 0.5f;
+
+            // Avoid placing buildings too close to main highways (east-west at z=0, north-south at x=0)
+            const float highwayHalf = 12.5f; // half-width of main highway
+            const float roadClearance = 3.0f; // extra clearance from highway edge
+            if (fabs(actualZ) - halfD < highwayHalf + roadClearance) continue;
+            if (fabs(actualX) - halfW < highwayHalf + roadClearance) continue;
+
+            // Avoid street light positions: lamps are at (i, +/-15) and (+/-15, i) for i = -120..120 step 30
+            bool tooCloseLamp = false;
+            const float lampClearance = 3.0f; // meters
+            for (int li = -120; li <= 120 && !tooCloseLamp; li += 30) {
+                for (int side = -1; side <= 1; side += 2) {
+                    float lx = (float)li; float lz = side * 15.0f;
+                    if (fabs(actualX - lx) < (halfW + lampClearance) && fabs(actualZ - lz) < (halfD + lampClearance)) { tooCloseLamp = true; break; }
+                    // also the perpendicular lamps at x = +/-15
+                    float lx2 = side * 15.0f; float lz2 = (float)li;
+                    if ( fabs(actualX - lx2) < (halfW + lampClearance) && fabs(actualZ - lz2) < (halfD + lampClearance)) { tooCloseLamp = true; break; }
+                }
+            }
+            if (tooCloseLamp) continue; // skip placement near lamps
+
+            // Check collision with existing buildings to avoid overlap
+            bool collidesWithExisting = false;
+            for (const auto& bb : buildingBoxes) {
+                float bx = bb.x, bz = bb.y, halfWb = bb.z, halfDb = bb.w;
+                float minDistX = halfW + halfWb + 0.5f; // small buffer
+                float minDistZ = halfD + halfDb + 0.5f;
+                if (fabs(actualX - bx) < minDistX && fabs(actualZ - bz) < minDistZ) { collidesWithExisting = true; break; }
+            }
+            if (collidesWithExisting) continue; // skip placement if it would overlap
+
+            // All checks passed: register building
+            b.pos = glm::vec3(actualX, 0.0f, actualZ);
+            buildings.push_back(b);
+            buildingBoxes.emplace_back(glm::vec4(b.pos.x, b.pos.z, halfW, halfD));
+
+            // small tree chance
+            if (rndi(0,99) < 35) {
+                SmallTreeInfo t;
+                float angle = rndf(0.0f, 2.0f * 3.14159265f);
+                float dist = halfW + 1.0f + rndf(0.0f,2.0f);
+                t.pos = glm::vec3(b.pos.x + cos(angle)*dist, 0.0f, b.pos.z + sin(angle)*dist);
+                if (fabs(t.pos.x) < 15.0f || fabs(t.pos.z) < 15.0f) { /*skip*/ }
+                else {
+                    t.trunkH = rndf(1.0f,1.8f);
+                    t.trunkR = rndf(0.12f,0.3f);
+                    t.foliage = rndf(0.8f,1.6f);
+                    smallTrees.push_back(t);
+                    buildingBoxes.emplace_back(glm::vec4(t.pos.x, t.pos.z, t.foliage*0.5f+0.4f, t.foliage*0.5f+0.4f));
+                }
+            }
+        }
+    }
+
+    // CBD high-rises
+    float cbdRadius = 35.0f;
+    for (float gx=-cbdRadius; gx<=cbdRadius; gx+=6.0f) {
+        for (float gz=-cbdRadius; gz<=cbdRadius; gz+=6.0f) {
+            float dist = sqrt(gx*gx + gz*gz);
+            if (dist > cbdRadius) continue;
+            float bx = gx + rndf(-1.25f,1.25f);
+            float bz = gz + rndf(-1.25f,1.25f);
+            float bWidth = rndf(8.0f,30.0f);
+            float bDepth = rndf(8.0f,30.0f);
+            float bHeight = rndf(40.0f,320.0f);
+            float halfW = bWidth*0.5f; float halfD = bDepth*0.5f;
+
+            // Ensure buildings are not sitting on main highways: nudge them outside clearance instead of simply skipping
+            const float highwayHalf = 12.5f; // half-width of main highways
+            const float roadClearance = 4.0f; // desired clearance from highway edge
+            // If building overlaps EW highway (z ~ 0), push it outward in Z
+            if (fabs(bz) - halfD < highwayHalf + roadClearance) {
+                if (bz >= 0.0f) bz = (highwayHalf + roadClearance) + halfD + 0.5f;
+                else bz = -((highwayHalf + roadClearance) + halfD + 0.5f);
+            }
+            // If building overlaps NS highway (x ~ 0), push it outward in X
+            if (fabs(bx) - halfW < highwayHalf + roadClearance) {
+                if (bx >= 0.0f) bx = (highwayHalf + roadClearance) + halfW + 0.5f;
+                else bx = -((highwayHalf + roadClearance) + halfW + 0.5f);
+            }
+
+            bool coll = false;
+            for (auto &bb: buildingBoxes) {
+                if (fabs(bx - bb.x) < (halfW + bb.z + 1.0f) && fabs(bz - bb.y) < (halfD + bb.w + 1.0f)) { coll=true; break;
+}
+            }
+            if (coll) continue;
+            BuildingInfo b; b.pos=glm::vec3(bx,0.0f,bz); b.width=bWidth; b.depth=bDepth; b.height=bHeight; b.color=glm::vec3(0.55f,0.58f,0.68f); b.buildingType=4; buildings.push_back(b);
+            buildingBoxes.emplace_back(glm::vec4(bx,bz,halfW,halfD));
+        }
+    }
+
+    // Commercial strips
+    float avenues[2] = {40.0f, -40.0f};
+    for (int ai=0; ai<2; ++ai) {
+        float az = avenues[ai];
+        for (float ax=-110.0f; ax<=110.0f; ax+=12.0f) {
+            float bx = ax + rndf(-1.5f,1.5f);
+            float bz = az + rndf(-1.0f,1.0f);
+            float bWidth = rndf(10.0f,16.0f); float bDepth = rndf(6.0f,10.0f); float bHeight = rndf(8.0f,20.0f);
+            float halfW = bWidth*0.5f, halfD = bDepth*0.5f;
+            // Nudge commercial buildings away from highways if they overlap
+            const float highwayHalfCom = 12.5f;
+            const float roadClearanceCom = 3.5f;
+            if (fabs(bz) - halfD < highwayHalfCom + roadClearanceCom) {
+                if (bz >= 0.0f) bz = (highwayHalfCom + roadClearanceCom) + halfD + 0.5f;
+                else bz = -((highwayHalfCom + roadClearanceCom) + halfD + 0.5f);
+            }
+            if (fabs(bx) - halfW < highwayHalfCom + roadClearanceCom) {
+                if (bx >= 0.0f) bx = (highwayHalfCom + roadClearanceCom) + halfW + 0.5f;
+                else bx = -((highwayHalfCom + roadClearanceCom) + halfW + 0.5f);
+            }
+            bool coll=false; for (auto &bb: buildingBoxes) { if (fabs(bx-bb.x)<(halfW+bb.z+0.8f) && fabs(bz-bb.y)<(halfD+bb.w+0.8f)) { coll=true; break; } }
+            if (coll) continue;
+            BuildingInfo b; b.pos=glm::vec3(bx,0.0f,bz); b.width=bWidth; b.depth=bDepth; b.height=bHeight; b.color=glm::vec3(0.78f,0.76f,0.72f); b.buildingType=3; buildings.push_back(b);
+            buildingBoxes.emplace_back(glm::vec4(bx,bz,halfW,halfD));
+        }
+    }
+}
+
+static void drawCity(const std::vector<BuildingInfo>& buildings, const std::vector<SmallTreeInfo>& smallTrees, Shader& buildingShader, GLuint cubeVAO, GLuint roofVAO, GLuint cylinderVAO) {
+    glm::mat4 model;
+    for (const auto &b : buildings) {
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(b.pos.x, b.height/2.0f, b.pos.z));
+        model = glm::scale(model, glm::vec3(b.width, b.height, b.depth));
+        buildingShader.SetMat4("model", model);
+        buildingShader.SetVec3("objectColor", b.color);
+        glBindVertexArray(cubeVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        // roofs
+        if (b.hasRoof) {
+            float roofHeight = glm::min(b.height*0.6f + 1.0f, 8.0f);
+            float roofY = b.height + roofHeight*0.5f;
+            glm::mat4 roofModel = glm::mat4(1.0f);
+            roofModel = glm::translate(roofModel, glm::vec3(b.pos.x, roofY, b.pos.z));
+            roofModel = glm::scale(roofModel, glm::vec3(b.width*1.02f, roofHeight, b.depth*1.02f));
+            buildingShader.SetMat4("model", roofModel);
+            buildingShader.SetVec3("objectColor", b.roofColor);
+            glBindVertexArray(roofVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 18);
+        }
+    }
+    // small trees
+    for (const auto &t : smallTrees) {
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(t.pos.x, t.trunkH/2.0f, t.pos.z));
+        model = glm::scale(model, glm::vec3(t.trunkR, t.trunkH, t.trunkR));
+        buildingShader.SetMat4("model", model);
+        buildingShader.SetVec3("objectColor", glm::vec3(0.36f, 0.20f, 0.09f));
+        glBindVertexArray(cylinderVAO);
+        glDrawElements(GL_TRIANGLES, 16 * 12, GL_UNSIGNED_INT, 0);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(t.pos.x, t.trunkH + t.foliage/2.0f, t.pos.z));
+        model = glm::scale(model, glm::vec3(t.foliage, t.foliage, t.foliage));
+        buildingShader.SetMat4("model", model);
+        buildingShader.SetVec3("objectColor", glm::vec3(0.1f,0.55f,0.12f));
+        glBindVertexArray(cubeVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+}
+
+// Ensure prototypes are visible before main (duplicate-safe)
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void processInput(GLFWwindow* window);
+GLuint createCube();
+// prototypes for helpers implemented in SceneHelpers.cpp
+GLuint createGround();
+GLuint createTriangularRoof();
+GLuint createCylinder();
+int getGroundIndexCount(); // prototype for procedural ground index count provided by SceneHelpers.cpp
 
 int main()
 {
@@ -353,20 +603,162 @@ int main()
     GLuint roofVAO = createTriangularRoof();
     GLuint cylinderVAO = createCylinder();
 
+    // Prepare deterministic city data (generate once)
+    std::vector<BuildingInfo> buildings;
+    std::vector<SmallTreeInfo> smallTrees;
+    std::vector<glm::vec4> buildingBoxes; // x,z,halfW,halfD
+    generateCity(buildings, smallTrees, buildingBoxes, 12345u);
+
+    // Load external model: visiongt1.obj (try several likely paths). Model loader will parse MTL and apply textures if available.
+    Model visionModel;
+    bool visionLoaded = false;
+    std::vector<std::string> visionPaths = {
+        "3D/source/visiongt1.obj",
+        
+    };
+    for (const auto &p : visionPaths) {
+        if (visionModel.LoadOBJ(p)) { visionLoaded = true; std::cout << "vision model loaded from: " << p << std::endl; break; }
+    }
+    if (!visionLoaded) {
+        std::cout << "Warning: visiongt1.obj not found. Place visiongt1.obj (and visiongt.mlt/associated textures) in project folder or Models/." << std::endl;
+    }
+
+    // Free-space placement for visiongt model: park beside the highway (Bugatti showcase)
+    // We'll search sidewalks along the main east-west (z=0) and north-south (x=0) highways
+    glm::vec3 visionPosition = glm::vec3(0.0f);
+    float visionYaw = 0.0f; // rotation around Y
+    const float visionScale = 0.02f; // requested scale for the model
+
+    // Highway/sidewalk geometry must match rendering code above
+    const float highwayHalf = 12.5f; // half-width of highway
+    const float sidewalkWidth = 2.5f;
+    const float sidewalkOffsetZ = highwayHalf + sidewalkWidth / 2.0f + 0.3f; // z offset for EW sidewalks
+    const float sidewalkOffsetX = highwayHalf + sidewalkWidth / 2.0f + 0.3f; // x offset for NS sidewalks
+
+    bool placed = false;
+    float placeY_onSidewalk = 0.03f; // small Y so car sits on road/sidewalk
+    float collisionBuffer = 2.0f; // meters of clearance when testing building boxes
+
+    // Try east-west highway sidewalks first (iterate X positions)
+    for (int x = -100; x <= 100 && !placed; x += 5) {
+        for (int side = -1; side <= 1 && !placed; side += 2) {
+            glm::vec3 cand((float)x, placeY_onSidewalk, side * sidewalkOffsetZ);
+            bool coll = false;
+            for (const auto &bb : buildingBoxes) {
+                float bx = bb.x, bz = bb.y, halfW = bb.z, halfD = bb.w;
+                if (fabs(cand.x - bx) < (halfW + collisionBuffer) && fabs(cand.z - bz) < (halfD + collisionBuffer)) { coll = true; break; }
+            }
+            if (!coll) {
+                visionPosition = cand;
+                // orient along X axis (east-west). If side>0 place facing +X, else -X
+                visionYaw = (side > 0) ? glm::radians(90.0f) : glm::radians(-90.0f);
+                placed = true;
+            }
+        }
+    }
+
+    // If not placed, try north-south highway sidewalks (iterate Z positions)
+    for (int z = -100; z <= 100 && !placed; z += 5) {
+        for (int side = -1; side <= 1 && !placed; side += 2) {
+            glm::vec3 cand(side * sidewalkOffsetX, placeY_onSidewalk, (float)z);
+            bool coll = false;
+            for (const auto &bb : buildingBoxes) {
+                float bx = bb.x, bz = bb.y, halfW = bb.z, halfD = bb.w;
+                if (fabs(cand.x - bx) < (halfW + collisionBuffer) && fabs(cand.z - bz) < (halfD + collisionBuffer)) { coll = true; break; }
+            }
+            if (!coll) {
+                visionPosition = cand;
+                // orient along Z axis (north-south). If side>0 place facing -Z, else +Z (so car points along road)
+                visionYaw = (side > 0) ? glm::radians(180.0f) : glm::radians(0.0f);
+                placed = true;
+            }
+        }
+    }
+
+    // Final fallback
+    if (!placed) {
+        visionPosition = glm::vec3(-90.0f, 1.0f, -90.0f);
+        visionYaw = 0.0f;
+    }
+
+    // Build a small scene graph to provide a multi-level hierarchical model
+    // Root -> District -> Block -> House -> Roof -> Window (>=4 levels)
+    SceneGraph sceneGraph;
+    auto rootNode = sceneGraph.GetRoot();
+
+    // Create simple reusable cube mesh for scene graph nodes
+    auto cubeMesh = std::make_shared<Mesh>(Mesh::CreateCube());
+
+    // Level 1: District
+    auto district = std::make_shared<SceneNode>("District");
+    glm::mat4 distTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-40.0f, 0.0f, -40.0f));
+    district->SetLocalTransform(distTransform);
+    rootNode->AddChild(district);
+
+    // Level 2: Block (child of district)
+    auto block = std::make_shared<SceneNode>("Block");
+    glm::mat4 blockTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+    block->SetLocalTransform(blockTransform);
+    district->AddChild(block);
+
+    // Level 3: House (child of block)
+    auto house = std::make_shared<SceneNode>("House");
+    glm::mat4 houseTransform = glm::translate(glm::mat4(1.0f), glm::vec3(6.0f, 2.0f, 6.0f));
+    houseTransform = glm::scale(houseTransform, glm::vec3(6.0f, 4.0f, 5.0f));
+    house->SetLocalTransform(houseTransform);
+    house->SetMesh(cubeMesh);
+    block->AddChild(house);
+
+    // Level 4: Roof (child of house)
+    auto roofNode = std::make_shared<SceneNode>("Roof");
+    glm::mat4 roofTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    roofTransform = glm::scale(roofTransform, glm::vec3(1.05f, 0.3f, 1.05f));
+    roofNode->SetLocalTransform(roofTransform);
+    // Use cube mesh scaled thin to approximate roof
+    roofNode->SetMesh(cubeMesh);
+    house->AddChild(roofNode);
+
+    // Level 5: Window (child of roof) to satisfy >=4 levels beyond root
+    auto windowNode = std::make_shared<SceneNode>("Window");
+    glm::mat4 winTransform = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, -0.8f, 2.6f));
+    winTransform = glm::scale(winTransform, glm::vec3(1.2f, 1.0f, 0.05f));
+    windowNode->SetLocalTransform(winTransform);
+    windowNode->SetMesh(cubeMesh);
+    roofNode->AddChild(windowNode);
+
     // Populate parked cars for the shopping mall parking lot
     // Mall center at (60, 0, 60)
     srand(424242); // fixed seed for consistent parked car placement
     glm::vec3 mallCenter = glm::vec3(60.0f, 0.0f, 60.0f);
+    //    int rows = 4;
+    //    int cols = 10;
+    //    float spacingX = 4.5f; // space between parking spaces
+    //    float spacingZ = 6.0f; // aisle spacing
+    //    float startX = mallCenter.x - (cols / 2.0f - 0.5f) * spacingX;
+    //    float startZ = mallCenter.z - (rows / 2.0f - 0.5f) * spacingZ - 30.0f; // place parking in front of mall
+    //    for (int r = 0; r < rows; ++r) {
+    //        for (int c = 0; c < cols; ++c) {
+    //            float px = startX + c * spacingX + ((rand() % 100) / 100.0f - 0.5f) * 0.3f;
+    //            float pz = startZ + r * spacingZ + ((rand() % 100) / 100.0f - 0.5f) * 0.3f;
+    //            glm::vec3 pos = glm::vec3(px, 0.85f, pz);
+    // Use same parking layout as renderShoppingMallComplex to avoid placing cars on highways
+    float mallWidth = 60.0f;
+    float mallDepth = 40.0f;
+    float parkingWidth = mallWidth + 20.0f; // 80
+    float parkingDepth = 30.0f;
+    glm::vec3 parkingCenter = glm::vec3(mallCenter.x, 0.01f, mallCenter.z - mallDepth / 2.0f - 10.0f);
+
+    int cols = 10; // spaces per row
     int rows = 4;
-    int cols = 10;
-    float spacingX = 4.5f; // space between parking spaces
-    float spacingZ = 6.0f; // aisle spacing
-    float startX = mallCenter.x - (cols / 2.0f - 0.5f) * spacingX;
-    float startZ = mallCenter.z - (rows / 2.0f - 0.5f) * spacingZ - 30.0f; // place parking in front of mall
+    float spaceWidth = (parkingWidth - 10.0f) / (float)cols;
+    float startLineX = parkingCenter.x - parkingWidth / 2.0f + 5.0f + spaceWidth / 2.0f;
+    float firstLineZ = parkingCenter.z - parkingDepth / 2.0f + 2.0f;
+    float rowSpacing = 6.0f; // match previous spacingZ approx
+
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
-            float px = startX + c * spacingX + ((rand() % 100) / 100.0f - 0.5f) * 0.3f;
-            float pz = startZ + r * spacingZ + ((rand() % 100) / 100.0f - 0.5f) * 0.3f;
+            float px = startLineX + c * spaceWidth + ((rand() % 100) / 100.0f - 0.5f) * 0.3f;
+            float pz = firstLineZ + r * rowSpacing + ((rand() % 100) / 100.0f - 0.5f) * 0.3f;
             glm::vec3 pos = glm::vec3(px, 0.85f, pz);
             int colorIndex = rand() % 10;
             glm::vec3 carColors[] = {
@@ -384,6 +776,25 @@ int main()
             int carType = rand() % 4;
             // parked cars have speed 0
             parkedCars.emplace_back(pos, glm::vec3(0.0f), carColors[colorIndex], 0.0f, 0, 0, carType);
+            // Ensure parked car has physical dimensions so it will be rendered by renderRealisticCar
+            {
+                Car &pc = parkedCars.back();
+                // Assign reasonable default dimensions (meters) and vary slightly by carType
+                float baseWidth = 1.8f;
+                float baseHeight = 1.25f;
+                float baseLength = 3.8f;
+                switch (carType) {
+                case 0: baseWidth = 1.7f; baseHeight = 1.2f; baseLength = 3.6f; break; // small car
+                case 1: baseWidth = 1.9f; baseHeight = 1.3f; baseLength = 4.2f; break; // sedan
+                case 2: baseWidth = 2.0f; baseHeight = 1.4f; baseLength = 4.6f; break; // suv
+                case 3: baseWidth = 1.6f; baseHeight = 1.15f; baseLength = 3.2f; break; // compact
+                }
+                // slight random jitter so parked cars look varied
+                float jitterScale = ((rand() % 100) / 100.0f - 0.5f) * 0.08f;
+                pc.width = baseWidth * (1.0f + jitterScale);
+                pc.height = baseHeight * (1.0f + jitterScale * 0.5f);
+                pc.length = baseLength * (1.0f + jitterScale);
+            }
         }
     }
 
@@ -420,6 +831,8 @@ int main()
 
     // Render loop
     glm::mat4 model;
+    // Ensure buildings are generated only once to avoid sizes/positions changing while moving the camera
+    bool buildingsGenerated = false;
     while (!glfwWindowShouldClose(window))
     {
         // Per-frame time logic
@@ -480,6 +893,10 @@ int main()
         glm::mat4 view = camera.GetViewMatrix();
         buildingShader.SetMat4("projection", projection);
         buildingShader.SetMat4("view", view);
+
+        // Draw scene graph hierarchical models
+        // This renders the small hierarchy: District->Block->House->Roof->Window
+        sceneGraph.Draw(buildingShader);
 
         // Set lighting uniforms (sun-like lighting)
         if (useDirectionalLight) {
@@ -569,6 +986,23 @@ int main()
                 }
             }
 
+            // Add small warm point-lights on buildings to make them glow at night
+            // Keep total point lights within shader capacity (64). Add lights only at night via lightScale multiplier.
+            size_t maxPointLights = 64;
+            // reserve some slots for other lights (spotlights etc) - we'll allow up to maxPointLights
+            for (const auto &b : buildings) {
+                if (pointPositions.size() >= maxPointLights) break;
+                // place light slightly above roof center
+                glm::vec3 lp = glm::vec3(b.pos.x, b.height + 2.0f, b.pos.z);
+                // simple visibility filter: skip extremely tall towers (they already have spotlights)
+                if (b.height > 100.0f) continue;
+                pointPositions.push_back(lp);
+                // warm building light color
+                pointColors.emplace_back(glm::vec3(1.0f, 0.85f, 0.55f));
+                // intensity scaled by time-of-day (lightScale) so they glow only at night
+                pointIntensities.emplace_back(2.2f * lightScale);
+            }
+
             int numPL = (int)pointPositions.size();
             buildingShader.SetInt("numPointLights", numPL);
             for (int i = 0; i < numPL; ++i) {
@@ -646,9 +1080,9 @@ int main()
         model = glm::scale(model, glm::vec3(250.0f, 1.0f, 250.0f));
         buildingShader.SetMat4("model", model);
         buildingShader.SetVec3("objectColor", groundColor);
-        // groundVAO has an element array buffer (EBO) with 6 indices; use it for indexed draw
+        // groundVAO has an element array buffer (EBO) with index count from createGround(); use it for indexed draw
         glBindVertexArray(groundVAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, getGroundIndexCount(), GL_UNSIGNED_INT, 0);
 
         buildingShader.SetBool("isGround", false);
         buildingShader.SetFloat("groundBumpIntensity", 0.0f);
@@ -797,6 +1231,32 @@ int main()
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
+        // === ADD ZEBRA CROSSWALKS ===
+        // Draw a single crosswalk on each main highway (one per road) to avoid clutter.
+        buildingShader.SetVec3("objectColor", glm::vec3(0.95f, 0.95f, 0.95f)); // near-white for stripes
+
+        // East-West highway: place one crosswalk at X = 0 (across z ~ 0)
+        {
+            float centerX = 0.0f;
+            float baseY = 0.075f; // slightly above road to avoid Z-fighting
+            int stripes = 8;                // number of stripes
+            float stripeWidth = 10.0f;      // length along X (keep moderate)
+            float stripeDepth = 1.2f;       // thickness along Z (stripe 'height' across road)
+            float spacing = 3.2f;           // spacing between stripes, chosen to span ~25m road width
+            int half = stripes / 2;
+            for (int s = -half; s <= half; ++s) {
+                model = glm::mat4(1.0f);
+                float zPos = s * spacing;
+                model = glm::translate(model, glm::vec3(centerX, baseY, zPos));
+                model = glm::scale(model, glm::vec3(stripeWidth, 0.01f, stripeDepth));
+                buildingShader.SetMat4("model", model);
+                glBindVertexArray(cubeVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            }
+        }
+
+       
+
         // === RENDER ROAD INFRASTRUCTURE ===
         renderRoadInfrastructure(buildingShader, cubeVAO, glfwGetTime());
 
@@ -842,6 +1302,7 @@ int main()
             glm::vec3(0.45f, 0.35f, 0.25f) // Reddish brown
         };
 
+        // Buildings already generated at startup; draw them now
         // Seed random for consistent building generation
         srand(12345);
 
@@ -952,659 +1413,34 @@ int main()
             glDisable(GL_BLEND);
         }
 
-        // Create realistic residential neighborhoods (denser, varied heights)
-        for (int x = -100; x <= 100; x += 10)  // higher density (every 10m)
-        {
-            for (int z = -100; z <= 100; z += 10)
-            {
-                // Avoid main highways and central avenues: keep generous margins
-                if ((x >= -15 && x <= 15) || (z >= -15 && z <= 15)) continue;
-
-                // Avoid secondary grid roads at multiples of 40 (wider margin)
-                if (fmod(fabs((float)x), 40.0f) < 2.0f || fmod(fabs((float)z), 40.0f) < 2.0f) continue;
-
-                // Avoid mall area and its parking approach
-                float dxMall = x - 60.0f; float dzMall = z - 20.0f;
-                if (dxMall * dxMall + dzMall * dzMall < 35.0f * 35.0f) continue;
-
-                // Small random offset to avoid strict grid look
-                float xOffset = ((rand() % 100) / 100.0f - 0.5f) * 4.0f;
-                float zOffset = ((rand() % 100) / 100.0f - 0.5f) * 4.0f;
-                float actualX = x + xOffset;
-                float actualZ = z + zOffset;
-
-                // Choose building type based on distance to city center so center has taller buildings
-                float distCenter = sqrtf((float)(x * x + z * z));
-                int buildingType;
-                int r = rand() % 100;
-                if (distCenter < 40.0f) {
-                    // City core - higher chance of mixed mid/high-rise
-                    if (r < 20) buildingType = 4;       // high-rise
-                    else if (r < 55) buildingType = 3;  // small apartment / mid-rise
-                    else if (r < 80) buildingType = 2;  // townhouse
-                    else buildingType = 1;              // semi-detached
-                }
-                else if (distCenter < 80.0f) {
-                    // Inner suburbs - more apartments and townhouses
-                    if (r < 10) buildingType = 4;
-                    else if (r < 40) buildingType = 3;
-                    else if (r < 75) buildingType = 2;
-                    else buildingType = 0; // house
-                }
-                else {
-                    // Outer suburbs - mostly houses
-                    if (r < 50) buildingType = 0;
-                    else if (r < 75) buildingType = 2;
-                    else buildingType = 1;
-                }
-
-                float width, depth, height;
-                bool hasTriangularRoof = false;
-
-                switch (buildingType) {
-                case 0: // single family house - varied smaller sizes
-                    width = 5.5f + (rand() % 50) / 10.0f;    // 5.5 - 10.5
-                    depth = 6.5f + (rand() % 50) / 10.0f;    // 6.5 - 11.5
-                    height = 4.5f + (rand() % 40) / 10.0f;   // 4.5 - 8.5
-                    hasTriangularRoof = (rand() % 100) < 85; // most have roofs
-                    break;
-                case 1: // semi-detached
-                    width = 9.0f + (rand() % 60) / 10.0f;   // 9 - 15
-                    depth = 7.0f + (rand() % 40) / 10.0f;   // 7 - 11
-                    height = 6.0f + (rand() % 50) / 10.0f;  // 6 - 11
-                    hasTriangularRoof = (rand() % 100) < 75;
-                    break;
-                case 2: // townhouse
-                    width = 4.5f + (rand() % 30) / 10.0f;    // 4.5 - 7.5
-                    depth = 8.5f + (rand() % 60) / 10.0f;   // 8.5 - 14.5
-                    height = 7.0f + (rand() % 60) / 10.0f;  // 7 - 13
-                    hasTriangularRoof = (rand() % 100) < 50;
-                    break;
-                case 3: // small apartment / mid-rise
-                    width = 10.0f + (rand() % 80) / 10.0f;   // 10 - 18
-                    depth = 9.0f + (rand() % 80) / 10.0f;    // 9 - 17
-                    height = 10.0f + (rand() % 100) / 10.0f; // 10 - 20
-                    hasTriangularRoof = (rand() % 100) < 20; // some have terraces (no roof)
-                    break;
-                case 4: // high-rise / skyscraper (city center)
-                    width = 10.0f + (rand() % 260) / 10.0f;   // 10 - 36
-                    depth = 10.0f + (rand() % 260) / 10.0f;   // 10 - 36
-                    height = 30.0f + (rand() % 210) / 1.0f;   // 30 - 240 (bigger variance)
-                    hasTriangularRoof = (rand() % 100) < 10;
-                    break;
-                default:
-                    width = 8.0f; depth = 10.0f; height = 6.0f;
-                }
-
-                // Clamp dimensions to reasonable limits so they fit in lots
-                width = glm::min(width, 40.0f);
-                depth = glm::min(depth, 40.0f);
-
-                // Ensure building remains within lot boundaries (avoid overlap with roads)
-                float lotHalfRes = 8.0f; // smaller lot due to higher density
-                float paddingRes = 1.5f;
-                float limitRes = lotHalfRes - paddingRes;
-                actualX = glm::clamp(actualX, (float)x - limitRes + width * 0.5f, (float)x + limitRes - width * 0.5f);
-                actualZ = glm::clamp(actualZ, (float)z - limitRes + depth * 0.5f, (float)z + limitRes - depth * 0.5f);
-
-                // Check collision with existing buildings to avoid overlap
-                bool collidesWithExisting = false;
-                for (const auto& bb : buildingBoxes) {
-                    float bx = bb.x, bz = bb.y, halfWb = bb.z, halfDb = bb.w;
-                    float halfW = width * 0.5f;
-                    float halfD = depth * 0.5f;
-                    float minDistX = halfW + halfWb + 0.5f; // small buffer
-                    float minDistZ = halfD + halfDb + 0.5f;
-                    if (fabs(actualX - bx) < minDistX && fabs(actualZ - bz) < minDistZ) { collidesWithExisting = true; break; }
-                }
-                if (collidesWithExisting) continue; // skip placement if it would overlap
-
-                // Additional safety: ensure building has clearance from major roads and secondary roads
-                float halfW = width * 0.5f;
-                float halfD = depth * 0.5f;
-                float clearance = 2.5f; // meters from road edge
-                bool tooCloseToRoad = false;
-                // main EW highway at z=0 spans approx +/-12.5; require clearance
-                if (fabs(actualZ) - halfD < 15.0f + clearance) tooCloseToRoad = true;
-                // main NS highway at x=0
-                if (fabs(actualX) - halfW < 15.0f + clearance) tooCloseToRoad = true;
-                // secondary grid roads at multiples of 40
-                float modX = fmodf(fabs(actualX), 40.0f);
-                float distToNearestGridX = glm::min(modX, 40.0f - modX);
-                if (distToNearestGridX - halfW < 4.0f + clearance) tooCloseToRoad = true;
-                float modZ = fmodf(fabs(actualZ), 40.0f);
-                float distToNearestGridZ = glm::min(modZ, 40.0f - modZ);
-                if (distToNearestGridZ - halfD < 4.0f + clearance) tooCloseToRoad = true;
-
-                if (tooCloseToRoad) continue; // skip this placement
-
-                // Render main building
-                model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(actualX, height / 2.0f, actualZ));
-                model = glm::scale(model, glm::vec3(width, height, depth));
-                buildingShader.SetMat4("model", model);
-
-                // Choose color palette based on type
-                glm::vec3 color;
-                if (buildingType == 4) color = glm::vec3(0.6f, 0.6f, 0.68f);
-                else if (buildingType == 3) color = glm::vec3(0.78f, 0.78f, 0.82f);
-                else if (buildingType == 2) color = glm::vec3(0.8f, 0.7f, 0.6f);
-                else color = houseColors[rand() % 8];
-
-                buildingShader.SetVec3("objectColor", color);
-                glBindVertexArray(cubeVAO);
-                glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                // Add facade details: windows, balconies, doors depending on building type
-                {
-                    // Determine window grid based on building size
-                    int windowCols = glm::max(1, (int)(width / 2.5f));
-                    int windowRows = glm::max(1, (int)(height / 3.0f));
-                    float winW = (width * 0.7f) / (float)windowCols;
-                    float winH = glm::min(1.2f, (height * 0.6f) / (float)windowRows);
-                    float winDepth = 0.05f; // thin window pane
-
-                    // Front face (+Z)
-                    for (int r = 0; r < windowRows; ++r) {
-                        for (int c = 0; c < windowCols; ++c) {
-                            // skip some windows randomly for variety on small buildings
-                            if ((buildingType <= 1) && ((r + c) % 5 == 0)) continue;
-                            float wx = actualX - width * 0.5f + (c + 0.5f) * (width / windowCols);
-                            float wz = actualZ + depth * 0.5f + 0.051f; // slightly in front
-                            float wy = (r + 0.5f) * (height / windowRows);
-
-                            glm::mat4 wmodel = glm::mat4(1.0f);
-                            wmodel = glm::translate(wmodel, glm::vec3(wx, wy, wz));
-                            wmodel = glm::scale(wmodel, glm::vec3(winW * 0.85f, winH * 0.85f, winDepth));
-                            buildingShader.SetMat4("model", wmodel);
-                            // choose glass color
-                            if (buildingType == 4) buildingShader.SetVec3("objectColor", glm::vec3(0.45f, 0.6f, 0.75f));
-                            else buildingShader.SetVec3("objectColor", glm::vec3(0.4f, 0.55f, 0.65f));
-                            glBindVertexArray(cubeVAO);
-                            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                            // small frame
-                            glm::mat4 fmodel = glm::mat4(1.0f);
-                            fmodel = glm::translate(fmodel, glm::vec3(wx, wy, wz - 0.03f));
-                            fmodel = glm::scale(fmodel, glm::vec3(winW * 0.9f, winH * 0.9f, 0.02f));
-                            buildingShader.SetMat4("model", fmodel);
-                            buildingShader.SetVec3("objectColor", glm::vec3(0.08f, 0.08f, 0.09f));
-                            glDrawArrays(GL_TRIANGLES, 0, 36);
-                        }
-                    }
-
-                    // Side faces (left/right) fewer windows for narrow sides
-                    int sideCols = glm::max(1, (int)(depth / 3.0f));
-                    for (int side = -1; side <= 1; side += 2) {
-                        for (int r = 0; r < windowRows; ++r) {
-                            for (int c = 0; c < sideCols; ++c) {
-                                float sz = actualZ - depth * 0.5f + (c + 0.5f) * (depth / sideCols);
-                                float sx = actualX + side * (width * 0.5f + 0.051f);
-                                float wy = (r + 0.5f) * (height / windowRows);
-                                glm::mat4 wmodel = glm::mat4(1.0f);
-                                wmodel = glm::translate(wmodel, glm::vec3(sx, wy, sz));
-                                wmodel = glm::scale(wmodel, glm::vec3(winDepth, winH * 0.85f, winW * 0.6f));
-                                buildingShader.SetMat4("model", wmodel);
-                                buildingShader.SetVec3("objectColor", glm::vec3(0.4f, 0.55f, 0.65f));
-                                glBindVertexArray(cubeVAO);
-                                glDrawArrays(GL_TRIANGLES, 0, 36);
-                            }
-                        }
-                    }
-
-                    // Doors and balconies for residential and townhouses
-                    if (buildingType == 0 || buildingType == 1 || buildingType == 2) {
-                        // door at front center
-                        glm::mat4 dmodel = glm::mat4(1.0f);
-                        dmodel = glm::translate(dmodel, glm::vec3(actualX, 0.9f, actualZ + depth * 0.5f + 0.02f));
-                        dmodel = glm::scale(dmodel, glm::vec3(glm::min(1.2f, width * 0.4f), 1.8f, 0.06f));
-                        buildingShader.SetMat4("model", dmodel);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.12f, 0.07f, 0.03f));
-                        glBindVertexArray(cubeVAO);
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                        // small balcony for townhouses
-                        if (buildingType == 2 || buildingType == 1) {
-                            int balconies = glm::max(1, windowRows / 2);
-                            for (int b = 0; b < balconies; ++b) {
-                                float by = 1.2f + b * 2.4f;
-                                glm::mat4 bmodel = glm::mat4(1.0f);
-                                bmodel = glm::translate(bmodel, glm::vec3(actualX + width * 0.5f + 0.02f, by, actualZ - depth * 0.15f));
-                                bmodel = glm::rotate(bmodel, glm::radians(90.0f), glm::vec3(0, 1, 0));
-                                bmodel = glm::scale(bmodel, glm::vec3(0.06f, 0.2f, glm::min(2.0f, width * 0.8f)));
-                                buildingShader.SetMat4("model", bmodel);
-                                buildingShader.SetVec3("objectColor", glm::vec3(0.15f, 0.15f, 0.15f));
-                                glBindVertexArray(cubeVAO);
-                                glDrawArrays(GL_TRIANGLES, 0, 36);
-                            }
-                        }
-                    }
-
-                    // High-rise glass strips for skyscrapers
-                    if (buildingType == 4) {
-                        int strips = glm::clamp((int)(width / 2.0f), 3, 12);
-                        for (int s = 0; s < strips; ++s) {
-                            float sx = actualX - width * 0.5f + (s + 0.5f) * (width / strips);
-                            glm::mat4 stripModel = glm::mat4(1.0f);
-                            stripModel = glm::translate(stripModel, glm::vec3(sx, height * 0.5f, actualZ + depth * 0.51f));
-                            stripModel = glm::scale(stripModel, glm::vec3((width / strips) * 0.6f, height * 0.95f, 0.04f));
-                            buildingShader.SetMat4("model", stripModel);
-                            buildingShader.SetVec3("objectColor", glm::vec3(0.35f, 0.55f, 0.75f));
-                            glBindVertexArray(cubeVAO);
-                            glDrawArrays(GL_TRIANGLES, 0, 36);
-                        }
-                    }
-                }
-
-                // record building footprint for tree placement
-                buildingBoxes.emplace_back(glm::vec4(actualX, actualZ, halfW, halfD));
-
-                // Render triangular roof if applicable
-                if (hasTriangularRoof) {
-                    // Choose a roof height relative to building height with a bit of randomness for variety
-                    float roofHeight = glm::min(height * 0.6f + ((rand() % 100) / 100.0f) * 2.0f, 8.0f);
-                    // Position roof so its base sits on top of the building (building top is at y = height)
-                    float roofY = height + roofHeight * 0.5f;
-                    glm::mat4 roofModel = glm::mat4(1.0f);
-                    roofModel = glm::translate(roofModel, glm::vec3(actualX, roofY, actualZ));
-                    // Slightly overhang the edges for realism
-                    float overhang = 1.02f;
-                    roofModel = glm::scale(roofModel, glm::vec3(width * overhang, roofHeight, depth * overhang));
-                    buildingShader.SetMat4("model", roofModel);
-                    // Pick a roof color from available palette
-                    glm::vec3 roofColor = roofColors[rand() % 8];
-                    buildingShader.SetVec3("objectColor", roofColor);
-                    glBindVertexArray(roofVAO);
-                    // createTriangularRoof provides 18 vertices (6 triangles)
-                    glDrawArrays(GL_TRIANGLES, 0, 18);
-                }
-
-                // Small decorative tree near building (random chance)
-                if ((rand() % 100) < 35) { // 35% chance
-                    // Attempt to place a small tree beside the building
-                    bool placedSmallTree = false;
-                    for (int ttry = 0; ttry < 6 && !placedSmallTree; ++ttry) {
-                        float angle = (rand() % 360) * (M_PI / 180.0f);
-                        float dist = (halfW + 1.0f) + (rand() % 100) / 100.0f * 2.0f; // just outside building
-                        float sx = actualX + cos(angle) * dist;
-                        float sz = actualZ + sin(angle) * dist;
-                        // avoid main roads and mall
-                        if (fabs(sx) < 15.0f || fabs(sz) < 15.0f) continue;
-                        float dxm2 = sx - 60.0f; float dzm2 = sz - 20.0f;
-                        if (dxm2 * dxm2 + dzm2 * dzm2 < 35.0f * 35.0f) continue;
-                        // check collision with existing building footprints
-                        bool coll = false;
-                        for (const auto& bb2 : buildingBoxes) {
-                            float bx = bb2.x, bz = bb2.y, bHalfW = bb2.z, bHalfD = bb2.w;
-                            if (fabs(sx - bx) < (0.8f + bHalfW + 0.5f) && fabs(sz - bz) < (0.8f + bHalfD + 0.5f)) { coll = true; break; }
-                        }
-                        if (coll) continue;
-                        // Place small tree: render trunk + foliage and add tiny footprint
-                        float trunkH = 1.0f + (rand() % 100) / 100.0f * 0.8f; // 1.0 - 1.8
-                        float trunkR = 0.12f + (rand() % 100) / 100.0f * 0.18f; // 0.12 - 0.3
-                        float foliage = 0.8f + (rand() % 100) / 100.0f * 0.8f; // 0.8 - 1.6
-                        // trunk
-                        model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(sx, trunkH / 2.0f, sz));
-                        model = glm::scale(model, glm::vec3(trunkR, trunkH, trunkR));
-                        buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.36f, 0.20f, 0.09f));
-                        glBindVertexArray(cylinderVAO);
-                        glDrawElements(GL_TRIANGLES, 16 * 12, GL_UNSIGNED_INT, 0);
-                        // foliage
-                        model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(sx, trunkH + foliage / 2.0f, sz));
-                        model = glm::scale(model, glm::vec3(foliage, foliage, foliage));
-                        buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.1f, 0.55f, 0.12f));
-                        glBindVertexArray(cubeVAO);
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                        // reserve small footprint so future buildings avoid it
-                        buildingBoxes.emplace_back(glm::vec4(sx, sz, foliage * 0.5f + 0.4f, foliage * 0.5f + 0.4f));
-                        placedSmallTree = true;
-                    }
-                }
-            }
-        }
-
-        // === ADDITIONAL: DENSE CENTRAL BUSINESS DISTRICT (CBD) ===
-        {
-            // Create many high-rises around the city center (0,0)
-            float cbdRadius = 35.0f;
-            float roadClearance = 6.0f; // meters clearance from highways
-            float highwayHalf = 12.5f; // half-width of main highways
-
-            for (float gx = -cbdRadius; gx <= cbdRadius; gx += 6.0f) {
-                for (float gz = -cbdRadius; gz <= cbdRadius; gz += 6.0f) {
-                    float dist = sqrt(gx * gx + gz * gz);
-                    if (dist > cbdRadius) continue;
-                    float jitterX = ((rand() % 100) / 100.0f - 0.5f) * 2.5f;
-                    float jitterZ = ((rand() % 100) / 100.0f - 0.5f) * 2.5f;
-                    float bx = gx + jitterX;
-                    float bz = gz + jitterZ;
-
-                    // skip positions too close to main highways (EW at z=0, NS at x=0)
-                    // we'll compute building extents below and test clearance before placing
-
-                    // skip mall area
-                    float dxm = bx - 60.0f; float dzm = bz - 20.0f;
-                    if (dxm * dxm + dzm * dzm < 35.0f * 35.0f) continue;
-
-                    // random building parameters biased to tall
-                    float bWidth = 8.0f + (rand() % 220) / 10.0f;   // 8 - 30
-                    float bDepth = 8.0f + (rand() % 220) / 10.0f;   // 8 - 30
-                    float bHeight = 40.0f + (rand() % 400) / 10.0f;  // 40 - 440
-                    bWidth = glm::min(bWidth, 36.0f);
-                    bDepth = glm::min(bDepth, 36.0f);
-                    bHeight = glm::min(bHeight, 320.0f);
-
-                    float halfW = bWidth * 0.5f;
-                    float halfD = bDepth * 0.5f;
-
-                    // Ensure clearance from main highways and secondary grid roads
-                    bool tooCloseToRoad = false;
-                    if (fabs(bz) - halfD < highwayHalf + roadClearance) tooCloseToRoad = true; // too close to EW highway
-                    if (fabs(bx) - halfW < highwayHalf + roadClearance) tooCloseToRoad = true; // too close to NS highway
-                    // secondary grid roads at multiples of 40
-                    float modX = fmodf(fabs(bx), 40.0f);
-                    float distToNearestGridX = glm::min(modX, 40.0f - modX);
-                    if (distToNearestGridX - halfW < 4.0f + roadClearance) tooCloseToRoad = true;
-                    float modZ = fmodf(fabs(bz), 40.0f);
-                    float distToNearestGridZ = glm::min(modZ, 40.0f - modZ);
-                    if (distToNearestGridZ - halfD < 4.0f + roadClearance) tooCloseToRoad = true;
-
-                    if (tooCloseToRoad) continue;
-
-                    // collision with existing footprints
-                    bool coll = false;
-                    for (const auto& bb : buildingBoxes) {
-                        float bx2 = bb.x, bz2 = bb.y, hw2 = bb.z, hd2 = bb.w;
-                        if (fabs(bx - bx2) < (halfW + hw2 + 1.0f) && fabs(bz - bz2) < (halfD + hd2 + 1.0f)) { coll = true; break; }
-                    }
-                    if (coll) continue;
-
-                    // render skyscraper
-                    glm::mat4 bmodel = glm::mat4(1.0f);
-                    bmodel = glm::translate(bmodel, glm::vec3(bx, bHeight / 2.0f, bz));
-                    bmodel = glm::scale(bmodel, glm::vec3(bWidth, bHeight, bDepth));
-                    buildingShader.SetMat4("model", bmodel);
-                    // glassy/steel color
-                    glm::vec3 bcolor = glm::vec3(0.55f, 0.58f, 0.68f) + glm::vec3(((rand() % 100) / 100.0f - 0.5f) * 0.06f);
-                    buildingShader.SetVec3("objectColor", bcolor);
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    // add vertical glass strips for visual variety
-                    int strips = glm::clamp((int)(bWidth / 2.0f), 4, 20);
-                    for (int s = 0; s < strips; ++s) {
-                        float sx = bx - bWidth * 0.5f + (s + 0.5f) * (bWidth / strips);
-                        glm::mat4 stripModel = glm::mat4(1.0f);
-                        stripModel = glm::translate(stripModel, glm::vec3(sx, bHeight * 0.5f, bz + bDepth * 0.51f));
-                        stripModel = glm::scale(stripModel, glm::vec3((bWidth / strips) * 0.6f, bHeight * 0.95f, 0.05f));
-                        buildingShader.SetMat4("model", stripModel);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.32f, 0.5f, 0.7f));
-                        glBindVertexArray(cubeVAO);
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-                    }
-
-                    // rooftop helipad or mechanical top block
-                    if ((rand() % 100) < 30) {
-                        glm::mat4 top = glm::mat4(1.0f);
-                        top = glm::translate(top, glm::vec3(bx, bHeight + 2.0f, bz));
-                        top = glm::scale(top, glm::vec3(glm::min(bWidth, 8.0f), 4.0f, glm::min(bDepth, 8.0f)));
-                        buildingShader.SetMat4("model", top);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.18f, 0.18f, 0.18f));
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-                    }
-
-                    // record footprint
-                    buildingBoxes.emplace_back(glm::vec4(bx, bz, halfW, halfD));
-                }
-            }
-        }
-
-        // === ADDITIONAL: COMMERCIAL STRIPS (mid-rise offices/shops) ===
-        {
-            // along two parallel avenues at z = +/-40 create continuous commercial strips
-            float avenues[2] = { 40.0f, -40.0f };
-            float highwayHalf = 12.5f;
-            float roadClearance = 4.0f;
-            for (int ai = 0; ai < 2; ++ai) {
-                float az = avenues[ai];
-                for (float ax = -110.0f; ax <= 110.0f; ax += 12.0f) {
-                    float jitter = ((rand() % 100) / 100.0f - 0.5f) * 3.0f;
-                    float bx = ax + jitter;
-                    float bz = az + ((rand() % 100) / 100.0f - 0.5f) * 2.0f;
-
-                    // avoid mall area
-                    float dxm = bx - 60.0f; float dzm = bz - 20.0f;
-                    if (dxm * dxm + dzm * dzm < 35.0f * 35.0f) continue;
-
-                    float bWidth = 10.0f + (rand() % 60) / 10.0f; // 10-16
-                    float bDepth = 6.0f + (rand() % 40) / 10.0f; //6-10
-                    float bHeight = 8.0f + (rand() % 120) / 10.0f; //8-20
-                    float halfW = bWidth * 0.5f, halfD = bDepth * 0.5f;
-
-                    // Ensure commercial buildings aren't built on main highways
-                    bool tooCloseToRoad = false;
-                    if (fabs(bz) - halfD < highwayHalf + roadClearance) tooCloseToRoad = true;
-                    if (fabs(bx) - halfW < highwayHalf + roadClearance) tooCloseToRoad = true;
-                    float modX = fmodf(fabs(bx), 40.0f);
-                    float distToNearestGridX = glm::min(modX, 40.0f - modX);
-                    if (distToNearestGridX - halfW < 4.0f + roadClearance) tooCloseToRoad = true;
-                    if (tooCloseToRoad) continue;
-
-                    bool coll = false;
-                    for (const auto& bb : buildingBoxes) {
-                        float bx2 = bb.x, bz2 = bb.y, hw2 = bb.z, hd2 = bb.w;
-                        if (fabs(bx - bx2) < (halfW + hw2 + 0.8f) && fabs(bz - bz2) < (halfD + hd2 + 0.8f)) { coll = true; break; }
-                    }
-                    if (coll) continue;
-
-                    glm::mat4 bmodel = glm::mat4(1.0f);
-                    bmodel = glm::translate(bmodel, glm::vec3(bx, bHeight / 2.0f, bz));
-                    bmodel = glm::scale(bmodel, glm::vec3(bWidth, bHeight, bDepth));
-                    buildingShader.SetMat4("model", bmodel);
-                    glm::vec3 bcolor = glm::vec3(0.78f, 0.76f, 0.72f) + glm::vec3(((rand() % 100) / 100.0f - 0.5f) * 0.06f);
-                    buildingShader.SetVec3("objectColor", bcolor);
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    // Front glass
-                    glm::mat4 f = glm::mat4(1.0f);
-                    f = glm::translate(f, glm::vec3(bx, bHeight * 0.5f - 0.5f, bz + bDepth * 0.51f));
-                    f = glm::scale(f, glm::vec3(bWidth * 0.8f, bHeight * 0.6f, 0.04f));
-                    buildingShader.SetMat4("model", f);
-                    buildingShader.SetVec3("objectColor", glm::vec3(0.45f, 0.6f, 0.75f));
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    // signage
-                    if ((rand() % 100) < 40) {
-                        glm::mat4 s = glm::mat4(1.0f);
-                        s = glm::translate(s, glm::vec3(bx, bHeight - 0.6f, bz + bDepth * 0.52f));
-                        s = glm::scale(s, glm::vec3(bWidth * 0.6f, 0.6f, 0.02f));
-                        buildingShader.SetMat4("model", s);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.12f, 0.4f, 0.85f));
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-                    }
-
-                    buildingBoxes.emplace_back(glm::vec4(bx, bz, halfW, halfD));
-                }
-            }
-        }
-
-        // Call residential decorative lights after buildings are placed
+        // Draw deterministic city generated at startup
+        drawCity(buildings, smallTrees, buildingShader, cubeVAO, roofVAO, cylinderVAO);
+        // Call residential decorative lights after buildings are placed (use footprints from startup generateCity)
         renderResidentialLights(buildingShader, cubeVAO, cylinderVAO, buildingBoxes, (float)glfwGetTime());
 
+        // Render external model visiongt if loaded
+        if (visionLoaded) {
+            glm::mat4 vm = glm::mat4(1.0f);
+            vm = glm::translate(vm, visionPosition);
+            vm = glm::rotate(vm, visionYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+            vm = glm::scale(vm, glm::vec3(visionScale, visionScale, visionScale));
+            // ensure model uses current building shader
+            visionModel.Draw(buildingShader, vm);
+        }
+
         // === Place and render a Bugatti showcase if available ===
-        {
-            static bool bugattiInitialized = false;
-            static bool bugattiLoaded = false;
-            static Model bugattiModel;
-            static glm::vec3 bugattiPos = glm::vec3(0.0f);
-            static float bugattiScale = 1.0f;
+        if (!cars.empty()) {
+            // Find a suitable parking spot in the mall parking lot for the showcase car
+            glm::vec3 bugattiSpot = glm::vec3(60.0f, 0.85f, 85.0f);
 
-            if (!bugattiInitialized) {
-                bugattiInitialized = true;
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, bugattiSpot);
+            model = glm::scale(model, glm::vec3(1.5f, 1.5f, 1.5f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(1.0f, 0.0f, 0.0f)); // Bright red for Bugatti
 
-                // Try to find an OBJ exported from your Blender file in the 3D/source folder.
-                // Expected source .blend: "3D/source/Bugatti Chiron Super sports Ske.blend"
-                // Please export it from Blender to OBJ and place it alongside the .blend.
-                const char* candidates[] = {
-
-                    "3D/source/visiongt1.obj",
-
-
-                    // Also check common alternate location where you may have placed the exported OBJ and textures
-
-                };
-
-                for (const char* p : candidates) {
-                    if (bugattiModel.LoadOBJ(p)) {
-                        std::cout << "Loaded Bugatti model from: " << p << std::endl;
-                        bugattiLoaded = true;
-                        break;
-                    }
-                }
-                if (!bugattiLoaded) {
-                    std::cout << "Bugatti OBJ not found in expected locations." << std::endl;
-                    std::cout << "Please open: C:\\Project\\Group3_CGD6214_Final\\Group3_CGD6214_Final\\3D\\source\\Bugatti Chiron Super sports Ske.blend in Blender and export it as OBJ or place the exported OBJ in 3D/textures." << std::endl;
-                    std::cout << "  File -> Export -> Wavefront (.obj) -> choose output file name 'Bugatti Chiron Super sports Ske.obj' and place it in 3D/source/ or 3D/textures/" << std::endl;
-                    std::cout << "Then re-run the application; the loader will attempt to load '3D/source/Bugatti Chiron Super sports Ske.obj', '3D/bugatti.obj' or files in 3D/textures/" << std::endl;
-                }
-
-                // If loaded, search for a free placement area
-                if (bugattiLoaded) {
-                    float searchMin = -80.0f, searchMax = 80.0f;
-                    float step = 4.0f;
-                    float carHalfW = 3.0f;   // required half-width of showroom area in meters
-                    float carHalfD = 5.0f;   // required half-depth
-                    float clearance = 4.0f;  // extra clearance from buildings/roads
-                    float highwayHalf = 12.5f; // half width of main highway
-
-                    bool found = false;
-                    for (float tx = searchMin; tx <= searchMax && !found; tx += step) {
-                        for (float tz = searchMin; tz <= searchMax && !found; tz += step) {
-                            // avoid main highways (EW at z=0, NS at x=0)
-                            if (fabs(tz) - carHalfD < highwayHalf + clearance) continue;
-                            if (fabs(tx) - carHalfW < highwayHalf + clearance) continue;
-
-                            // avoid secondary grid roads at multiples of 40
-                            float modX = fmodf(fabs(tx), 40.0f);
-                            float distToNearestGridX = glm::min(modX, 40.0f - modX);
-                            if (distToNearestGridX - carHalfW < 4.0f + clearance) continue;
-                            float modZ = fmodf(fabs(tz), 40.0f);
-                            float distToNearestGridZ = glm::min(modZ, 40.0f - modZ);
-                            if (distToNearestGridZ - carHalfD < 4.0f + clearance) continue;
-
-                            // avoid mall area
-                            float dxm = tx - 60.0f; float dzm = tz - 20.0f;
-                            if (dxm * dxm + dzm * dzm < 40.0f * 40.0f) continue;
-
-                            // check collision with all building footprints
-                            bool coll = false;
-                            for (const auto& bb : buildingBoxes) {
-                                float bx = bb.x, bz = bb.y, hw = bb.z, hd = bb.w;
-                                if (fabs(tx - bx) < (hw + carHalfW + clearance) && fabs(tz - bz) < (hd + carHalfD + clearance)) { coll = true; break; }
-                            }
-                            if (coll) continue;
-
-                            // position is free
-                            bugattiPos = glm::vec3(tx, 0.0f, tz);
-                            // choose a reasonable scale — may need tuning depending on OBJ size
-                            bugattiScale = 0.02f; // reduced scale so OBJ appears smaller; adjust if needed
-                            found = true;
-                        }
-                    }
-                    if (!found) {
-                        std::cout << "No suitable free space found for Bugatti showcase. Consider increasing search area or reducing clearance." << std::endl;
-                    }
-                    else {
-                        std::cout << "Bugatti will be placed at: (" << bugattiPos.x << ", " << bugattiPos.y << ", " << bugattiPos.z << ") scale=" << bugattiScale << std::endl;
-                    }
-                }
-            }
-
-            // Render the model if loaded and placed
-            if (bugattiLoaded) {
-                // Save previous objectColor
-                glm::vec3 prevColor = glm::vec3(1.0f);
-                // Try to read previous color from shader if available (best-effort)
-                // We'll apply a Bugatti blue tint while drawing the model
-                glm::vec3 bugColor = glm::vec3(0.02f, 0.18f, 0.45f); // deep Bugatti blue
-
-                glm::mat4 bmodel = glm::mat4(1.0f);
-                // lift slightly above ground if model origin at center
-                bmodel = glm::translate(bmodel, glm::vec3(bugattiPos.x, 0.5f, bugattiPos.z));
-                bmodel = glm::scale(bmodel, glm::vec3(bugattiScale));
-
-                // Apply tint by temporarily setting objectColor uniform
-                buildingShader.SetVec3("objectColor", bugColor);
-
-                // Create a simple showcase platform and visual spotlights for the Bugatti
-                // Platform (dark circular/rect base)
-                glm::mat4 platformModel = glm::mat4(1.0f);
-                platformModel = glm::translate(platformModel, glm::vec3(bugattiPos.x, 0.02f, bugattiPos.z));
-                // scaled as a flat stage; adjust scale for your model size
-                platformModel = glm::scale(platformModel, glm::vec3(6.0f, 0.04f, 10.0f));
-                buildingShader.SetMat4("model", platformModel);
-                buildingShader.SetVec3("objectColor", glm::vec3(0.06f, 0.06f, 0.07f));
-                glBindVertexArray(cubeVAO);
-                glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                // Platform rim (slightly elevated reflective band)
-                glm::mat4 rim = glm::mat4(1.0f);
-                rim = glm::translate(rim, glm::vec3(bugattiPos.x, 0.06f, bugattiPos.z));
-                rim = glm::scale(rim, glm::vec3(6.5f, 0.02f, 10.5f));
-                buildingShader.SetMat4("model", rim);
-                buildingShader.SetVec3("objectColor", glm::vec3(0.18f, 0.18f, 0.20f));
-                glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                // Visual spotlights: additive blended ground blobs + translucent cones above
-                glEnable(GL_BLEND);
-                // additive so lights brighten underlying objects
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-
-                const int NUM_SHOW_SPOTS = 3;
-                for (int i = 0; i < NUM_SHOW_SPOTS; ++i) {
-                    float ang = i * 2.0f * 3.14159265f / NUM_SHOW_SPOTS + 0.3f;
-                    float dx = cos(ang) * 3.0f;
-                    float dz = sin(ang) * 2.5f;
-                    // ground blob
-                    glm::mat4 spotG = glm::mat4(1.0f);
-                    spotG = glm::translate(spotG, glm::vec3(bugattiPos.x + dx, 0.03f, bugattiPos.z + dz));
-                    // scale horizontal ellipse
-                    float rx = 1.8f; float rz = 2.2f;
-                    spotG = glm::scale(spotG, glm::vec3(rx, 0.01f, rz));
-                    buildingShader.SetMat4("model", spotG);
-                    // warm spotlight color
-                    buildingShader.SetVec3("objectColor", glm::vec3(1.0f, 0.95f, 0.8f) * 0.9f);
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    // translucent cone (approximate using tall thin cylinder) above to hint at light source
-                    glm::mat4 cone = glm::mat4(1.0f);
-                    cone = glm::translate(cone, glm::vec3(bugattiPos.x + dx, 6.5f, bugattiPos.z + dz));
-                    // tall, slightly flared
-                    cone = glm::scale(cone, glm::vec3(0.6f, 7.0f, 0.6f));
-                    buildingShader.SetMat4("model", cone);
-                    // lower alpha to make cone see-through
-                    buildingShader.SetVec3("objectColor", glm::vec3(1.0f, 0.96f, 0.85f) * 0.25f);
-                    glBindVertexArray(cylinderVAO);
-                    // cylinder uses element array
-                    glDrawElements(GL_TRIANGLES, 16 * 12, GL_UNSIGNED_INT, 0);
-                }
-
-                // restore blending state to default multiplicative alpha for rest of scene
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glDisable(GL_BLEND);
-
-                bugattiModel.Draw(buildingShader, bmodel);
-
-                // Restore previous object color
-                buildingShader.SetVec3("objectColor", prevColor);
-            }
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
         // draw skybox

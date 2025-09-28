@@ -300,6 +300,23 @@ bool Model::LoadOBJ(const std::string& path) {
         }
     }
 
+    // Debug: print mesh count and bounding box for loaded model
+    {
+        int meshCount = (int)meshes.size();
+        float minX = 1e9f, minY = 1e9f, minZ = 1e9f, maxX = -1e9f, maxYb = -1e9f, maxZ = -1e9f;
+        for (const auto &m : matVertices) {
+            const auto &verts = m.second;
+            for (size_t i = 0; i + 7 < verts.size(); i += 8) {
+                float x = verts[i + 0], y = verts[i + 1], z = verts[i + 2];
+                minX = std::min(minX, x); minY = std::min(minY, y); minZ = std::min(minZ, z);
+                maxX = std::max(maxX, x); maxYb = std::max(maxYb, y); maxZ = std::max(maxZ, z);
+            }
+        }
+        if (meshCount > 0) {
+            std::cout << "Model load summary: meshes=" << meshCount << " bboxMin=(" << minX << "," << minY << "," << minZ << ") bboxMax=(" << maxX << "," << maxYb << "," << maxZ << ")" << std::endl;
+        }
+    }
+
     return anyMesh;
 }
 

@@ -300,7 +300,44 @@ void renderShoppingMallComplex(Shader& shader, GLuint cubeVAO, GLuint cylinderVA
     // Render parked cars
     // forward declare renderRealisticCar from main.cpp; the symbol exists there
     extern void renderRealisticCar(const Car & car, Shader & shader, GLuint cubeVAO, GLuint cylinderVAO);
+    // Resolve overlaps: attempt to move conflicting parked cars behind the parking area or skip them
+    std::vector<Car> placedParked;
+    placedParked.reserve(parkedCars.size());
+    float nudgeZ = 6.0f; // step to move a car back if it overlaps
     for (const auto& pcar : parkedCars) {
+        Car temp = pcar;
+        float halfW = glm::max(0.5f, temp.width * 0.5f);
+        float halfD = glm::max(0.8f, temp.length * 0.5f);
+        bool placed = false;
+        // Try a few attempts shifting the car backward (away from mall) to avoid collision with mall footprint
+        for (int attempt = 0; attempt < 6 && !placed; ++attempt) {
+            bool collMall = (fabs(temp.position.x - mallPos.x) < (mallWidth * 0.5f + halfW + 0.2f)) &&
+                            (fabs(temp.position.z - mallPos.z) < (mallDepth * 0.5f + halfD + 0.2f));
+
+            bool collOther = false;
+            for (const auto& other : placedParked) {
+                float ohw = glm::max(0.5f, other.width * 0.5f);
+                float ohd = glm::max(0.8f, other.length * 0.5f);
+                if (fabs(temp.position.x - other.position.x) < (halfW + ohw + 0.2f) &&
+                    fabs(temp.position.z - other.position.z) < (halfD + ohd + 0.2f)) {
+                    collOther = true; break;
+                }
+            }
+
+            if (!collMall && !collOther) {
+                placedParked.push_back(temp);
+                placed = true;
+                break;
+            }
+
+            // Move the car further back along -Z from the parking center (push away from mall)
+            temp.position.z -= nudgeZ * (attempt + 1);
+        }
+        // If after attempts not placed, try removing (skip)
+    }
+
+    // Render placed parked cars
+    for (const auto& pcar : placedParked) {
         renderRealisticCar(pcar, shader, cubeVAO, cylinderVAO);
     }
 }
