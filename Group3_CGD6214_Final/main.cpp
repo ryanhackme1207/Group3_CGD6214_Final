@@ -11,6 +11,12 @@ using namespace glm;
 #include <ctime>
 #include "Camera.h"
 #include "Shader.h"
+#include "Mesh.h"
+#include "Model.h"
+#include "SceneNode.h"
+#include "SceneGraph.h"
+#include "LODManager.h"
+#include "SpatialPartition.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
