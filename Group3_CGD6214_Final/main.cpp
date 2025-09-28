@@ -510,6 +510,9 @@ int main()
 
         buildingShader.Use();
 
+        buildingShader.SetFloat("bumpIntensity", 0.3f);
+        buildingShader.SetFloat("time", (float)glfwGetTime());
+
         // View/projection transformations using camera
         glm::mat4 projection = camera.GetProjectionMatrix((float)WIDTH / (float)HEIGHT);
         glm::mat4 view = camera.GetViewMatrix();
@@ -672,12 +675,20 @@ int main()
         // Render ground (grass/concrete)
         glm::vec3 groundColor = glm::vec3(0.4f, 0.6f, 0.3f);  // Grass green
         if (timeOfDay >= 6.0f && timeOfDay < 10.0f) groundColor = glm::vec3(0.52f, 0.75f, 0.45f); // Brighter in morning
+        
+        buildingShader.SetBool("isGround", true);
+        buildingShader.SetFloat("groundBumpIntensity", 0.4f);
+        buildingShader.SetFloat("time", (float)glfwGetTime());
+        
         model = glm::mat4(1.0f);
         model = glm::scale(model, glm::vec3(250.0f, 1.0f, 250.0f));
         buildingShader.SetMat4("model", model);
         buildingShader.SetVec3("objectColor", groundColor);
         glBindVertexArray(groundVAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        buildingShader.SetBool("isGround", false);
+        buildingShader.SetFloat("groundBumpIntensity", 0.0f);
 
         // === RENDER HIGHWAY SYSTEM ===
         // Main East-West Highway (25m wide total)
@@ -1710,8 +1721,8 @@ GLuint createGround()
     float vertices[] = {
         // positions          // normals           // texture coords
         -1.0f, 0.0f, -1.0f,   0.0f,  1.0f, 0.0f,   0.0f, 0.0f,
-         1.0f, 0.0f, -1.0f,   0.0f,  1.0f, 0.0f,   1.0f, 0.0f,
-         1.0f, 0.0f,  1.0f,   0.0f,  1.0f, 0.0f,   1.0f, 1.0f,
+         1.0f, 0.0f, -1.0f,   0.0f,  1.0f, 0.0f,   10.0f, 0.0f, // bump
+         1.0f, 0.0f,  1.0f,   0.0f,  1.0f, 0.0f,   10.0f, 1.0f, // bump
         -1.0f, 0.0f,  1.0f,   0.0f,  1.0f, 0.0f,   0.0f, 1.0f,
     };
 

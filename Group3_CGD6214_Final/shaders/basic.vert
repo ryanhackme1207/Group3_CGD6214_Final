@@ -11,11 +11,35 @@ out vec3 FragPos;
 out vec3 Normal;
 out vec2 TexCoord;
 
+out vec3 TangentLightPos;
+out vec3 TangentViewPos;
+out vec3 TangentFragPos;
+
+uniform vec3 lightPos;
+uniform vec3 viewPos;
+
+uniform bool isGround;
+
 void main()
 {
     FragPos = vec3(model * vec4(aPos, 1.0));
     Normal = mat3(transpose(inverse(model))) * aNormal;
     TexCoord = aTexCoord;
-    
+
+    if (isGround) {
+        vec3 T = normalize(vec3(1.0, 0.0, 0.0));
+        vec3 N = normalize(vec3(0.0, 1.0, 0.0));
+        vec3 B = cross(N, T);
+        
+        mat3 TBN = mat3(T, B, N);
+        TangentLightPos = TBN * lightPos;
+        TangentViewPos  = TBN * viewPos;
+        TangentFragPos  = TBN * FragPos;
+    } else {
+        TangentLightPos = lightPos;
+        TangentViewPos = viewPos;
+        TangentFragPos = FragPos;
+    }
+
     gl_Position = projection * view * vec4(FragPos, 1.0);
 }

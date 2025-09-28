@@ -4,6 +4,9 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoord;
+in vec3 TangentLightPos;
+in vec3 TangentViewPos;
+in vec3 TangentFragPos;
 
 // Material properties
 struct Material {
@@ -49,10 +52,41 @@ uniform vec3 lightColor;
 uniform vec3 viewPos;
 uniform vec3 objectColor;
 
+uniform bool isGround;
+uniform float groundBumpIntensity;
+uniform float time;
+
+float groundNoise(vec2 coord) {
+    float noise = 0.0;
+    noise += sin(coord.x * 5.0 + time * 0.5) * 0.1;
+    noise += sin(coord.y * 8.0 + time * 0.3) * 0.05;
+    noise += sin((coord.x + coord.y) * 12.0 + time * 0.7) * 0.03;
+    return noise;
+}
+
+vec3 groundBumpNormal(vec2 texCoord) {
+    vec2 groundCoord = texCoord * 20.0;
+    
+    float d = 0.01;
+    
+    float h = groundNoise(groundCoord);
+    float hx = groundNoise(groundCoord + vec2(d, 0.0));
+    float hy = groundNoise(groundCoord + vec2(0.0, d));
+
+    vec3 normal = normalize(vec3(h - hx, 0.1, h - hy));
+    
+    return normal;
+}
+
 void main()
 {
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
+
+    if (isGround && groundBumpIntensity > 0.01) {
+        vec3 bumpNorm = groundBumpNormal(TexCoord);
+        norm = normalize(mix(norm, bumpNorm, groundBumpIntensity));
+    }
 
     // Start with global ambient
     vec3 result = ambientColor * objectColor * 0.15;
