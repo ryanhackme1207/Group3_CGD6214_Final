@@ -20,18 +20,27 @@ public:
 
     void SetLocalTransform(const glm::mat4& transform);
     const glm::mat4& GetLocalTransform() const;
-    glm::mat4 GetWorldTransform() const;
+    glm::mat4 GetWorldTransform();
 
     void SetMesh(std::shared_ptr<Mesh> mesh);
     std::shared_ptr<Mesh> GetMesh() const;
 
+    // Draw uses parentTransform (default identity). Internal caching avoids recompute if not dirty.
     void Draw(Shader& shader, const glm::mat4& parentTransform = glm::mat4(1.0f));
 
     std::string name;
 
 private:
+    // mark this node and descendants dirty
+    void MarkDirty();
+
     SceneNode* parent;
     std::vector<std::shared_ptr<SceneNode>> children;
     glm::mat4 localTransform;
+
+    // cached world transform + dirty flag
+    glm::mat4 cachedWorldTransform;
+    bool worldDirty;
+
     std::shared_ptr<Mesh> mesh;
 };
