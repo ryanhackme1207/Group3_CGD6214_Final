@@ -23,6 +23,9 @@ public:
     void SetSpecularMap(const std::string& path);
     void SetEmissionMap(const std::string& path);
 
+    // Set a pre-created GL texture as diffuse (useful for atlases). If takeOwnership is true, Mesh will delete it on destruction.
+    void SetDiffuseTextureID(GLuint texID, bool takeOwnership = false);
+
     static Mesh CreateCube();
 
     // --- CPU-side mesh and edit operations ---
@@ -49,6 +52,7 @@ private:
     GLuint EBO;
     unsigned int indexCount;
     GLuint textureID; // diffuse (0 if none)
+    bool ownsTexture; // whether this Mesh owns and should delete textureID
     GLuint normalMapID; // normal map texture (0 if none)
     GLuint specularMapID; // specular map texture (0 if none)
     GLuint emissionMapID; // emission map texture (0 if none)

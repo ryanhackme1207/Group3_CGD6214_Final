@@ -8,6 +8,8 @@
 #include <array>
 #include <chrono>
 
+#include "stb_image.h"
+
 Model::Model() {}
 Model::~Model() {}
 
@@ -15,6 +17,11 @@ static std::string GetDirectory(const std::string& path) {
     size_t pos = path.find_last_of("/\\");
     if (pos == std::string::npos) return std::string();
     return path.substr(0, pos + 1);
+}
+
+// helper: next power of two (not strictly required but useful)
+static int NextPow2(int v) {
+    int p = 1; while (p < v) p <<= 1; return p;
 }
 
 bool Model::LoadOBJ(const std::string& path) {
@@ -101,7 +108,7 @@ bool Model::LoadOBJ(const std::string& path) {
                 outVerts.push_back(nrm.x); outVerts.push_back(nrm.y); outVerts.push_back(nrm.z);
                 outVerts.push_back(uv.x); outVerts.push_back(uv.y);
                 outInds.push_back(static_cast<unsigned int>(outInds.size()));
-                };
+            };
 
             // Append to current material's vertex/index lists
             parseFaceToMat(a, matVertices[currentMaterial], matIndices[currentMaterial]);
@@ -193,6 +200,130 @@ bool Model::LoadOBJ(const std::string& path) {
         std::cout << "Skipping MTL/texture loading for: " << fname << std::endl;
     }
 
+    // If we have textures to atlas, build atlas and remap UVs
+    GLuint atlasTex = 0;
+    std::unordered_map<std::string, std::array<float,4>> materialRect; // ox,oy,ow,oh
+    if (loadTextures && !materialToTexture.empty()) {
+        // collect unique texture paths in deterministic order
+        std::vector<std::string> uniqueTexPaths;
+        std::unordered_map<std::string,int> texIndex;
+        for (const auto &m : materialOrder) {
+            auto it = materialToTexture.find(m);
+            if (it != materialToTexture.end()) {
+                const std::string &p = it->second;
+                if (texIndex.find(p) == texIndex.end()) {
+                    texIndex[p] = (int)uniqueTexPaths.size();
+                    uniqueTexPaths.push_back(p);
+                }
+            }
+        }
+
+        if (!uniqueTexPaths.empty()) {
+            // load all images
+            struct Img { int w,h,channels; std::vector<unsigned char> data; std::string path; };
+            std::vector<Img> imgs; imgs.reserve(uniqueTexPaths.size());
+            int maxW = 0, maxH = 0;
+            stbi_set_flip_vertically_on_load(true);
+            for (const auto &p : uniqueTexPaths) {
+                Img im; im.path = p;
+                int w,h,chn;
+                unsigned char *d = stbi_load(p.c_str(), &w, &h, &chn, 0);
+                if (!d) {
+                    std::cerr << "Atlas: failed to load " << p << std::endl;
+                    continue;
+                }
+                im.w = w; im.h = h; im.channels = chn;
+                // convert to RGBA
+                im.data.resize(w * h * 4);
+                for (int y = 0; y < h; ++y) {
+                    for (int x = 0; x < w; ++x) {
+                        int srcIdx = (y * w + x) * chn;
+                        int dstIdx = (y * w + x) * 4;
+                        if (chn == 1) {
+                            unsigned char v = d[srcIdx]; im.data[dstIdx+0]=v; im.data[dstIdx+1]=v; im.data[dstIdx+2]=v; im.data[dstIdx+3]=255;
+                        } else if (chn == 3) {
+                            im.data[dstIdx+0] = d[srcIdx+0]; im.data[dstIdx+1] = d[srcIdx+1]; im.data[dstIdx+2] = d[srcIdx+2]; im.data[dstIdx+3] = 255;
+                        } else if (chn == 4) {
+                            im.data[dstIdx+0] = d[srcIdx+0]; im.data[dstIdx+1] = d[srcIdx+1]; im.data[dstIdx+2] = d[srcIdx+2]; im.data[dstIdx+3] = d[srcIdx+3];
+                        }
+                    }
+                }
+                stbi_image_free(d);
+                imgs.push_back(std::move(im));
+                maxW = std::max(maxW, imgs.back().w);
+                maxH = std::max(maxH, imgs.back().h);
+            }
+
+            if (!imgs.empty()) {
+                int N = (int)imgs.size();
+                int cols = (int)std::ceil(std::sqrt((double)N));
+                int rows = (int)std::ceil((double)N / cols);
+                int cellW = maxW;
+                int cellH = maxH;
+                int atlasW = cellW * cols;
+                int atlasH = cellH * rows;
+
+                std::vector<unsigned char> atlasData(atlasW * atlasH * 4);
+                // initialize transparent
+                std::fill(atlasData.begin(), atlasData.end(), 0);
+
+                for (int i = 0; i < N; ++i) {
+                    int col = i % cols;
+                    int row = i / cols;
+                    int ox = col * cellW;
+                    int oy = row * cellH;
+                    Img &im = imgs[i];
+                    // copy image into atlas
+                    for (int y = 0; y < im.h; ++y) {
+                        for (int x = 0; x < im.w; ++x) {
+                            int dstX = ox + x;
+                            int dstY = oy + y;
+                            int dstIdx = (dstY * atlasW + dstX) * 4;
+                            int srcIdx = (y * im.w + x) * 4;
+                            atlasData[dstIdx+0] = im.data[srcIdx+0];
+                            atlasData[dstIdx+1] = im.data[srcIdx+1];
+                            atlasData[dstIdx+2] = im.data[srcIdx+2];
+                            atlasData[dstIdx+3] = im.data[srcIdx+3];
+                        }
+                    }
+                    float oxN = (float)ox / (float)atlasW;
+                    float oyN = (float)oy / (float)atlasH;
+                    float owN = (float)im.w / (float)atlasW;
+                    float ohN = (float)im.h / (float)atlasH;
+                    materialRect[ uniqueTexPaths[i] ] = { oxN, oyN, owN, ohN };
+                }
+
+                // create GL texture for atlas
+                glGenTextures(1, &atlasTex);
+                glBindTexture(GL_TEXTURE_2D, atlasTex);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlasW, atlasH, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasData.data());
+                glGenerateMipmap(GL_TEXTURE_2D);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glBindTexture(GL_TEXTURE_2D, 0);
+
+                // remap UVs in matVertices according to atlas rects
+                for (const auto &m : materialOrder) {
+                    auto it = materialToTexture.find(m);
+                    if (it == materialToTexture.end()) continue;
+                    const std::string &texp = it->second;
+                    auto rit = materialRect.find(texp);
+                    if (rit == materialRect.end()) continue;
+                    auto rect = rit->second; // ox,oy,ow,oh
+                    auto &verts = matVertices[m];
+                    for (size_t vi = 0; vi + 7 < verts.size(); vi += 8) {
+                        float u = verts[vi + 6];
+                        float v = verts[vi + 7];
+                        verts[vi + 6] = rect[0] + u * rect[2];
+                        verts[vi + 7] = rect[1] + v * rect[3];
+                    }
+                }
+            }
+        }
+    }
+
     // Create meshes for each material group
     bool anyMesh = false;
 
@@ -210,6 +341,7 @@ bool Model::LoadOBJ(const std::string& path) {
     }
     float rodCutDelta = 1.0f; // remove faces whose all vertices are within rodCutDelta of maxY
 
+    bool atlasAssignedOwner = false;
     for (const auto& matName : materialOrder) {
         auto verts = matVertices[matName]; // copy so we can filter
         auto inds = matIndices[matName];
@@ -257,8 +389,13 @@ bool Model::LoadOBJ(const std::string& path) {
         }
 
         if (!texPath.empty()) {
-            std::cout << "Creating mesh for material '" << matName << "' with texture: " << texPath << std::endl;
-            auto mesh = std::make_shared<Mesh>(verts, inds, texPath);
+            std::cout << "Creating mesh for material '" << matName << "' with atlas texture" << std::endl;
+            auto mesh = std::make_shared<Mesh>(verts, inds);
+            if (atlasTex) {
+                // assign atlas texture to mesh; let first mesh own it so atlas is freed once
+                mesh->SetDiffuseTextureID(atlasTex, !atlasAssignedOwner);
+                atlasAssignedOwner = true;
+            }
             meshes.push_back(mesh);
         }
         else {
