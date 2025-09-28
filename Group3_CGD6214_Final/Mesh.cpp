@@ -10,7 +10,7 @@
 #include "stb_image.h"
 
 // single default constructor, initialize map IDs too
-Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), ownsTexture(false), normalMapID(0), specularMapID(0), emissionMapID(0) {}
+Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0), specularMapID(0), emissionMapID(0) {}
 
 static Mesh::Vertex ConvertFromFlat(const float* base) {
     Mesh::Vertex v;
@@ -28,16 +28,8 @@ static void ConvertToFlat(const Mesh::Vertex& v, float* out) {
     out[6] = v.uv.x; out[7] = v.uv.y;
 }
 
-// Helper: remap all CPU-side UVs by scale+offset (rect: x,y = origin in atlas, w,h = size in atlas) in [0,1]
-void RemapUVs(std::vector<Mesh::Vertex>& verts, float ox, float oy, float ow, float oh) {
-    for (auto &v : verts) {
-        v.uv.x = ox + v.uv.x * ow;
-        v.uv.y = oy + v.uv.y * oh;
-    }
-}
-
 Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices)
-    : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), ownsTexture(false), normalMapID(0), specularMapID(0), emissionMapID(0)
+    : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0), specularMapID(0), emissionMapID(0)
 {
     if (vertices.empty()) return;
 
@@ -93,7 +85,6 @@ Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& 
         if (textureID == 0) {
             std::cerr << "Warning: failed to load texture: " << texturePath << std::endl;
         } else {
-            ownsTexture = true;
             // attempt to load associated normal, specular and emission maps using naming conventions
             normalMapID = LoadAssociatedNormalMap(texturePath);
             specularMapID = LoadAssociatedSpecularMap(texturePath);
@@ -108,7 +99,7 @@ Mesh::~Mesh()
     if (emissionMapID) glDeleteTextures(1, &emissionMapID);
     if (specularMapID) glDeleteTextures(1, &specularMapID);
     if (normalMapID) glDeleteTextures(1, &normalMapID);
-    if (textureID && ownsTexture) glDeleteTextures(1, &textureID);
+    if (textureID) glDeleteTextures(1, &textureID);
     if (EBO) glDeleteBuffers(1, &EBO);
     if (VBO) glDeleteBuffers(1, &VBO);
     if (VAO) glDeleteVertexArrays(1, &VAO);
@@ -116,10 +107,9 @@ Mesh::~Mesh()
 
 void Mesh::SetTexture(const std::string& texturePath)
 {
-    if (textureID && ownsTexture) {
+    if (textureID) {
         glDeleteTextures(1, &textureID);
         textureID = 0;
-        ownsTexture = false;
     }
     if (normalMapID) { glDeleteTextures(1, &normalMapID); normalMapID = 0; }
     if (specularMapID) { glDeleteTextures(1, &specularMapID); specularMapID = 0; }
@@ -128,7 +118,6 @@ void Mesh::SetTexture(const std::string& texturePath)
         textureID = LoadTextureFromFile(texturePath);
         if (textureID == 0) std::cerr << "SetTexture: failed to load " << texturePath << std::endl;
         else {
-            ownsTexture = true;
             normalMapID = LoadAssociatedNormalMap(texturePath);
             specularMapID = LoadAssociatedSpecularMap(texturePath);
             emissionMapID = LoadAssociatedEmissionMap(texturePath);
@@ -149,14 +138,6 @@ void Mesh::SetSpecularMap(const std::string& path) {
 void Mesh::SetEmissionMap(const std::string& path) {
     if (emissionMapID) { glDeleteTextures(1, &emissionMapID); emissionMapID = 0; }
     if (!path.empty()) emissionMapID = LoadTextureFromFile(path);
-}
-
-void Mesh::SetDiffuseTextureID(GLuint texID, bool takeOwnership) {
-    if (textureID && ownsTexture) {
-        glDeleteTextures(1, &textureID);
-    }
-    textureID = texID;
-    ownsTexture = takeOwnership;
 }
 
 void Mesh::UpdateGPU()
