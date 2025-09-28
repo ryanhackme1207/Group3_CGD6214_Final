@@ -466,43 +466,87 @@ static void generateCity(std::vector<BuildingInfo>& buildings, std::vector<Small
 
 static void drawCity(const std::vector<BuildingInfo>& buildings, const std::vector<SmallTreeInfo>& smallTrees, Shader& buildingShader, GLuint cubeVAO, GLuint roofVAO, GLuint cylinderVAO) {
     glm::mat4 model;
+    const glm::vec3 camPos = camera.GetPosition();
     for (const auto &b : buildings) {
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(b.pos.x, b.height/2.0f, b.pos.z));
-        model = glm::scale(model, glm::vec3(b.width, b.height, b.depth));
-        buildingShader.SetMat4("model", model);
-        buildingShader.SetVec3("objectColor", b.color);
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        // roofs
-        if (b.hasRoof) {
-            float roofHeight = glm::min(b.height*0.6f + 1.0f, 8.0f);
-            float roofY = b.height + roofHeight*0.5f;
-            glm::mat4 roofModel = glm::mat4(1.0f);
-            roofModel = glm::translate(roofModel, glm::vec3(b.pos.x, roofY, b.pos.z));
-            roofModel = glm::scale(roofModel, glm::vec3(b.width*1.02f, roofHeight, b.depth*1.02f));
-            buildingShader.SetMat4("model", roofModel);
-            buildingShader.SetVec3("objectColor", b.roofColor);
-            glBindVertexArray(roofVAO);
-            glDrawArrays(GL_TRIANGLES, 0, 18);
+        float dist = glm::distance(camPos, glm::vec3(b.pos.x, 0.0f, b.pos.z));
+        // LOD thresholds
+        // 0..100: full detail (building + optional roof)
+        // 100..200: simplified (single box, no roof)
+        // >200: very far - skip rendering (or render tiny marker)
+        if (dist <= 100.0f) {
+            // full detail
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(b.pos.x, b.height/2.0f, b.pos.z));
+            model = glm::scale(model, glm::vec3(b.width, b.height, b.depth));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", b.color);
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            // roofs
+            if (b.hasRoof) {
+                float roofHeight = glm::min(b.height*0.6f + 1.0f, 8.0f);
+                float roofY = b.height + roofHeight*0.5f;
+                glm::mat4 roofModel = glm::mat4(1.0f);
+                roofModel = glm::translate(roofModel, glm::vec3(b.pos.x, roofY, b.pos.z));
+                roofModel = glm::scale(roofModel, glm::vec3(b.width*1.02f, roofHeight, b.depth*1.02f));
+                buildingShader.SetMat4("model", roofModel);
+                buildingShader.SetVec3("objectColor", b.roofColor);
+                glBindVertexArray(roofVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 18);
+            }
+        } else if (dist <= 200.0f) {
+            // simplified LOD: one box, no roof, slightly darker to indicate distance
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(b.pos.x, (b.height*0.5f) / 1.5f, b.pos.z));
+            // scale down height a bit for mid LOD
+            model = glm::scale(model, glm::vec3(b.width * 0.9f, b.height * 0.66f, b.depth * 0.9f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", b.color * 0.85f);
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        } else {
+            // very far: optionally render a tiny marker or skip entirely. We'll draw a very small box to preserve silhouette.
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(b.pos.x, 1.0f, b.pos.z));
+            model = glm::scale(model, glm::vec3(1.0f, 2.0f, 1.0f));
+            buildingShader.SetMat4("model", model);
+            glm::vec3 farColor = glm::vec3(0.5f) * glm::vec3(0.6f) + b.color * 0.1f;
+            buildingShader.SetVec3("objectColor", farColor);
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
         }
     }
-    // small trees
+    // small trees - use LOD: only render up close; mid distance draw simplified cube foliage; far skip
     for (const auto &t : smallTrees) {
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(t.pos.x, t.trunkH/2.0f, t.pos.z));
-        model = glm::scale(model, glm::vec3(t.trunkR, t.trunkH, t.trunkR));
-        buildingShader.SetMat4("model", model);
-        buildingShader.SetVec3("objectColor", glm::vec3(0.36f, 0.20f, 0.09f));
-        glBindVertexArray(cylinderVAO);
-        glDrawElements(GL_TRIANGLES, 16 * 12, GL_UNSIGNED_INT, 0);
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(t.pos.x, t.trunkH + t.foliage/2.0f, t.pos.z));
-        model = glm::scale(model, glm::vec3(t.foliage, t.foliage, t.foliage));
-        buildingShader.SetMat4("model", model);
-        buildingShader.SetVec3("objectColor", glm::vec3(0.1f,0.55f,0.12f));
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
+        float dist = glm::distance(camPos, glm::vec3(t.pos.x, 0.0f, t.pos.z));
+        if (dist > 120.0f) continue; // skip distant small trees
+        if (dist <= 60.0f) {
+            // full detail: trunk + foliage
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(t.pos.x, t.trunkH/2.0f, t.pos.z));
+            model = glm::scale(model, glm::vec3(t.trunkR, t.trunkH, t.trunkR));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.36f, 0.20f, 0.09f));
+            glBindVertexArray(cylinderVAO);
+            glDrawElements(GL_TRIANGLES, 16 * 12, GL_UNSIGNED_INT, 0);
+
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(t.pos.x, t.trunkH + t.foliage/2.0f, t.pos.z));
+            model = glm::scale(model, glm::vec3(t.foliage, t.foliage, t.foliage));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.1f,0.55f,0.12f));
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        } else {
+            // mid LOD: single small cube as foliage
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(t.pos.x, t.trunkH + t.foliage/2.0f, t.pos.z));
+            model = glm::scale(model, glm::vec3(t.foliage * 0.75f, t.foliage * 0.75f, t.foliage * 0.75f));
+            buildingShader.SetMat4("model", model);
+            buildingShader.SetVec3("objectColor", glm::vec3(0.12f,0.5f,0.11f));
+            glBindVertexArray(cubeVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
     }
 }
 
