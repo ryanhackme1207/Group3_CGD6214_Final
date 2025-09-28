@@ -734,6 +734,37 @@ void main() {
     GLuint roofVAO = createTriangularRoof();
     GLuint cylinderVAO = createCylinder();
 
+    // --- Shadow map setup ---
+    const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
+    GLuint depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
+    // create depth texture
+    GLuint depthMap;
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "ERROR::FRAMEBUFFER:: Shadow framebuffer not complete!" << std::endl;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Load shadow shader
+    Shader depthShader;
+    if (!depthShader.LoadFromFile("shaders/shadowmap.vert", "shaders/shadowmap.frag")) {
+        std::cerr << "Failed to load shadowmap shaders" << std::endl;
+    }
+
     // Prepare deterministic city data (generate once)
     std::vector<BuildingInfo> buildings;
     std::vector<SmallTreeInfo> smallTrees;
@@ -1186,6 +1217,79 @@ void main() {
                 buildingShader.SetFloat(base + ".constant", 1.0f);
                 buildingShader.SetFloat(base + ".linear", 0.09f);
                 buildingShader.SetFloat(base + ".quadratic", 0.032f);
+            }
+
+            // --- SHADOW PASS for primary spotlight (index 0) ---
+            if (!spotPositions.empty()) {
+                // compute light-space matrix for spotlight 0
+                glm::vec3 lightPos = spotPositions[0];
+                glm::vec3 lightDirVec = glm::normalize(spotDirections[0]);
+                // choose up vector
+                glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+                if (fabs(glm::dot(up, lightDirVec)) > 0.99f) up = glm::vec3(1.0f, 0.0f, 0.0f);
+                glm::mat4 lightView = glm::lookAt(lightPos, lightPos + (-lightDirVec), up);
+                float near_plane = 1.0f;
+                float far_plane = 800.0f;
+                glm::mat4 lightProjection = glm::perspective(glm::radians(45.0f), 1.0f, near_plane, far_plane);
+                glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+                // Render scene to depth map
+                glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+                glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+                glClear(GL_DEPTH_BUFFER_BIT);
+
+                depthShader.Use();
+                depthShader.SetMat4("lightSpaceMatrix", lightSpaceMatrix);
+
+                // Draw scene geometry using depthShader (reuse existing draw functions by passing depthShader)
+                // scene graph
+                sceneGraph.Draw(depthShader);
+                // buildings
+                drawCity(buildings, smallTrees, depthShader, cubeVAO, roofVAO, cylinderVAO);
+                // ground
+                {
+                    glm::mat4 m = glm::mat4(1.0f);
+                    m = glm::scale(m, glm::vec3(250.0f, 1.0f, 250.0f));
+                    depthShader.SetMat4("model", m);
+                    glBindVertexArray(groundVAO);
+                    glDrawElements(GL_TRIANGLES, getGroundIndexCount(), GL_UNSIGNED_INT, 0);
+                }
+                // main towers and mall (large objects)
+                // KL Tower
+                {
+                    glm::mat4 m = glm::mat4(1.0f);
+                    m = glm::translate(m, glm::vec3(25.0f, 210.5f, 25.0f));
+                    m = glm::scale(m, glm::vec3(3.0f, 421.0f, 3.0f));
+                    depthShader.SetMat4("model", m);
+                    glBindVertexArray(cubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+                // Eiffel Tower
+                {
+                    glm::mat4 m = glm::mat4(1.0f);
+                    m = glm::translate(m, glm::vec3(-30.0f, 50.0f, -30.0f));
+                    m = glm::scale(m, glm::vec3(12.0f, 100.0f, 12.0f));
+                    depthShader.SetMat4("model", m);
+                    glBindVertexArray(cubeVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+                // shopping mall
+                renderShoppingMallComplex(depthShader, cubeVAO, cylinderVAO);
+
+                // moving cars and pedestrians (render all for accurate shadows)
+                for (const auto &c : cars) renderRealisticCar(c, depthShader, cubeVAO, cylinderVAO);
+                for (const auto &pc : parkedCars) renderRealisticCar(pc, depthShader, cubeVAO, cylinderVAO);
+                for (const auto &p : pedestrians) renderPedestrian(p, depthShader, cubeVAO, cylinderVAO);
+
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glViewport(0, 0, WIDTH, HEIGHT);
+
+                // Bind depth map to a texture unit for use in lighting pass
+                buildingShader.Use();
+                buildingShader.SetInt("spotShadowMap", 5);
+                glActiveTexture(GL_TEXTURE5);
+                glBindTexture(GL_TEXTURE_2D, depthMap);
+                buildingShader.SetMat4("spotLightSpace", lightSpaceMatrix);
             }
         }
         else {
