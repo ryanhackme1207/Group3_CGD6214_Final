@@ -28,6 +28,8 @@ using namespace glm;
 //global state
 bool useDirectionalLight = true;
 bool lightKeyPressed = false;
+int MSAA = 0;
+bool msaaKeyPressed = false;
 
 float timeOfDay = 12.0f;
 const float DAY_CYCLE_DURATION = 60.0f;
@@ -334,6 +336,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_SAMPLES, 4);
 
     // Create window
     GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Realistic Residential City", NULL, NULL);
@@ -360,6 +363,8 @@ int main()
 
     // Configure global OpenGL state
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_MULTISAMPLE);
+    MSAA = 4;
 
     // Load shaders from files
     Shader buildingShader;
@@ -457,6 +462,17 @@ int main()
     std::cout << "F5: Reload shaders" << std::endl;
     std::cout << "ESC: Exit" << std::endl;
     std::cout << "=======================" << std::endl;
+    std::cout << "=== LIGHT CONTROLS ===" << std::endl;
+    std::cout << "L: Change current light mode" << std::endl;
+    std::cout << "=======================" << std::endl;
+    std::cout << "=== MSAA CONTROLS ===" << std::endl;
+    std::cout << "M: Toggle MSAA on/off (Current: " << (MSAA > 0 ? "ON" : "OFF") << ")" << std::endl;
+    std::cout << "=======================" << std::endl;
+    
+
+    if (MSAA > 0) {
+        glEnable(GL_MULTISAMPLE);
+    }
 
     // Render loop
     glm::mat4 model;
@@ -1238,6 +1254,25 @@ void processInput(GLFWwindow* window)
     }
     if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE) {
         lightKeyPressed = false;
+    }
+
+    // MSAA switch
+    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS && !msaaKeyPressed) {
+        msaaKeyPressed = true;
+
+        if (MSAA > 0) {
+            MSAA = 0;
+            glDisable(GL_MULTISAMPLE);
+            std::cout << "MSAA: OFF" << std::endl;
+        }
+        else {
+            MSAA = 4;
+            glEnable(GL_MULTISAMPLE);
+            std::cout << "MSAA: ON (4x)" << std::endl;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_RELEASE) {
+        msaaKeyPressed = false;
     }
 }
 
