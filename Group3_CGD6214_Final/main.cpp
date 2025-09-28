@@ -1453,7 +1453,7 @@ int main()
                 // Please export it from Blender to OBJ and place it alongside the .blend.
                 const char* candidates[] = {
 
-                    "3D/source/visiongt.obj",
+                    "3D/source/visiongt1.obj",
 
 
                     // Also check common alternate location where you may have placed the exported OBJ and textures
