@@ -52,9 +52,18 @@ uniform vec3 lightColor;
 uniform vec3 viewPos;
 uniform vec3 objectColor;
 
+// Directional light (optional)
+uniform vec3 lightDir; // direction of light rays
+
+// Extra bump/global control
+uniform float bumpIntensity;
+
 uniform bool isGround;
 uniform float groundBumpIntensity;
 uniform float time;
+
+uniform sampler2D diffuseTex;
+uniform bool hasTexture;
 
 float groundNoise(vec2 coord) {
     float noise = 0.0;
@@ -83,36 +92,59 @@ void main()
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
 
-    if (isGround && groundBumpIntensity > 0.01) {
+    // combine bumpIntensity and groundBumpIntensity for effective bump
+    float effectiveBump = clamp(groundBumpIntensity + bumpIntensity, 0.0, 1.0);
+    if (isGround && effectiveBump > 0.01) {
         vec3 bumpNorm = groundBumpNormal(TexCoord);
-        norm = normalize(mix(norm, bumpNorm, groundBumpIntensity));
+        norm = normalize(mix(norm, bumpNorm, effectiveBump));
     }
 
-    // Start with global ambient
-    vec3 result = ambientColor * objectColor * 0.15;
+    // determine final object color, sampling diffuse texture when available
+    vec3 texColor = vec3(1.0);
+    if (hasTexture) {
+        texColor = texture(diffuseTex, TexCoord).rgb;
+    }
+    vec3 objectColorFinal = texColor * objectColor;
 
-    // If simple single light is provided, use it as a directional-like source
-    if (length(lightColor) > 0.001) {
-        vec3 lightDir = normalize(lightPos - FragPos);
-        float diff = max(dot(norm, lightDir), 0.0);
+    // Start with global ambient
+    vec3 result = ambientColor * objectColorFinal * 0.15;
+
+    // If directional light provided, use it
+    if (length(lightDir) > 0.001) {
+        // lightDir is expected to be the direction the light rays travel (from light toward scene)
+        vec3 L = normalize(-lightDir); // vector from fragment toward light source
+        float diff = max(dot(norm, L), 0.0);
         vec3 diffuse = diff * lightColor;
 
         float specularStrength = 0.6;
-        vec3 reflectDir = reflect(-lightDir, norm);
+        vec3 reflectDir = reflect(-L, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
         vec3 specular = specularStrength * spec * lightColor;
 
-        result += (diffuse + specular) * objectColor;
+        result += (diffuse + specular) * objectColorFinal;
+    }
+    else if (length(lightColor) > 0.001) {
+        // If simple single light is provided, use it as a point-like source
+        vec3 L = normalize(lightPos - FragPos);
+        float diff = max(dot(norm, L), 0.0);
+        vec3 diffuse = diff * lightColor;
+
+        float specularStrength = 0.6;
+        vec3 reflectDir = reflect(-L, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
+        vec3 specular = specularStrength * spec * lightColor;
+
+        result += (diffuse + specular) * objectColorFinal;
     }
 
     // Add contributions from point lights
     for (int i = 0; i < numPointLights; ++i) {
         PointLight pl = pointLights[i];
-        vec3 lightDir = normalize(pl.position - FragPos);
-        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 lightDirP = normalize(pl.position - FragPos);
+        float diff = max(dot(norm, lightDirP), 0.0);
         // Specular
         float specularStrength = 0.6;
-        vec3 reflectDir = reflect(-lightDir, norm);
+        vec3 reflectDir = reflect(-lightDirP, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
         vec3 specular = specularStrength * spec * pl.color * pl.intensity;
         // Attenuation
@@ -123,14 +155,14 @@ void main()
         specular *= attenuation;
         // Ambient from this point light (very small)
         vec3 ambient = 0.05 * pl.color * pl.intensity * attenuation;
-        result += (ambient + diffuse + specular) * objectColor;
+        result += (ambient + diffuse + specular) * objectColorFinal;
     }
 
     // Add contributions from spotlights
     for (int i = 0; i < numSpotLights; ++i) {
         SpotLight sl = spotLights[i];
-        vec3 lightDir = normalize(sl.position - FragPos);
-        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 lightDirS = normalize(sl.position - FragPos);
+        float diff = max(dot(norm, lightDirS), 0.0);
 
         // Attenuation
         float distance = length(sl.position - FragPos);
@@ -138,13 +170,13 @@ void main()
 
         // Spotlight intensity (soft edges)
         vec3 spotDir = normalize(-sl.direction); // direction the spotlight points toward
-        float theta = dot(lightDir, spotDir);
+        float theta = dot(lightDirS, spotDir);
         float epsilon = sl.innerCutoff - sl.outerCutoff;
         float intensity = clamp((theta - sl.outerCutoff) / max(epsilon, 0.001), 0.0, 1.0);
 
         // Specular
         float specularStrength = 0.6;
-        vec3 reflectDir = reflect(-lightDir, norm);
+        vec3 reflectDir = reflect(-lightDirS, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 64);
         vec3 specular = specularStrength * spec * sl.color * sl.intensity * intensity;
 
@@ -153,7 +185,7 @@ void main()
         specular *= attenuation;
         vec3 ambient = 0.03 * sl.color * sl.intensity * attenuation;
 
-        result += (ambient + diffuse + specular) * objectColor;
+        result += (ambient + diffuse + specular) * objectColorFinal;
     }
 
     // Slight fog for distance

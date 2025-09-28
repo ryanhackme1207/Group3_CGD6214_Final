@@ -136,6 +136,7 @@
     <ClCompile Include="Model.cpp" />
     <ClCompile Include="Pedestrians.cpp" />
     <ClCompile Include="SceneGraph.cpp" />
+    <ClCompile Include="SceneHelpers.cpp" />
     <ClCompile Include="SceneNode.cpp" />
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="SpatialPartition.cpp" />
@@ -144,6 +145,7 @@
   <ItemGroup>
     <ClInclude Include="Camera.h" />
     <ClInclude Include="LODManager.h" />
+    <ClInclude Include="main.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Model.h" />
     <ClInclude Include="Pedestrians.h" />
@@ -157,7 +159,7 @@
   <ItemGroup>
     <None Include="shaders\basic.vert" />
     <None Include="shaders\ground.frag" />
-    <None Include="shaders\Lighting.frag" />
+    <None Include="shaders\lighting.frag" />
     <None Include="shaders\normalmap.frag" />
     <None Include="shaders\shadowmap.frag" />
     <None Include="shaders\shadowmap.vert" />

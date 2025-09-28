@@ -19,7 +19,8 @@ struct Car {
 
     Car() : position(0.0f), direction(0.0f), color(1.0f), speed(0.0f), width(0.0f), height(0.0f), length(0.0f), lane(0), roadType(0), carType(0) {}
     Car(const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& col, float spd, int ln, int rt, int ct)
-        : position(pos), direction(dir), color(col), speed(spd), width(0.0f), height(0.0f), length(0.0f), lane(ln), roadType(rt), carType(ct) {}
+        : position(pos), direction(dir), color(col), speed(spd), width(0.0f), height(0.0f), length(0.0f), lane(ln), roadType(rt), carType(ct) {
+    }
 };
 
 extern std::vector<Car> cars;
@@ -37,3 +38,6 @@ void renderShoppingMallComplex(Shader& shader, GLuint cubeVAO, GLuint cylinderVA
 
 // Render a car using the realistic car renderer defined in main.cpp
 void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO);
+
+// New: render decorative residential lights near building footprints
+void renderResidentialLights(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO, const std::vector<glm::vec4>& buildingBoxes, float currentTime);

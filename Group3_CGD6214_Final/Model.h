@@ -22,4 +22,7 @@ public:
 
 private:
     std::vector<std::shared_ptr<Mesh>> meshes;
+    // Optional underglow mesh (generated for visiongt only)
+    std::shared_ptr<Mesh> underglowMesh;
+    bool hasUnderglow = false;
 };

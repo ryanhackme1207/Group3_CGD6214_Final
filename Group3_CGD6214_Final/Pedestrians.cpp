@@ -25,26 +25,26 @@ void spawnPedestrians(int count) {
         if ((x >= -10.0f && x <= 10.0f) || (z >= -10.0f && z <= 10.0f)) continue;
         if (fmod(fabs(x), 40.0f) < 1.0f || fmod(fabs(z), 40.0f) < 1.0f) continue;
         float dxm = x - 60.0f; float dzm = z - 20.0f;
-        if (dxm*dxm + dzm*dzm < 40.0f*40.0f) continue;
+        if (dxm * dxm + dzm * dzm < 40.0f * 40.0f) continue;
         float angle = (rand() % 360) * (M_PI / 180.0f);
         glm::vec3 dir = glm::normalize(glm::vec3(cos(angle), 0.0f, sin(angle)));
         float speed = 0.7f + (rand() % 100) / 100.0f * 0.9f;
         float dur = 1.0f + (rand() % 100) / 100.0f * 4.0f;
-        glm::vec3 col = glm::vec3(0.7f - (rand()%40)/100.0f, 0.6f - (rand()%30)/100.0f, 0.5f - (rand()%30)/100.0f);
+        glm::vec3 col = glm::vec3(0.7f - (rand() % 40) / 100.0f, 0.6f - (rand() % 30) / 100.0f, 0.5f - (rand() % 30) / 100.0f);
         pedestrians.emplace_back(glm::vec3(x, 0.0f, z), dir, speed, dur, col);
         spawned++;
     }
 }
 
 void updatePedestrians(float deltaTime) {
-    for (auto &p : pedestrians) {
+    for (auto& p : pedestrians) {
         p.walkTimer += deltaTime;
         // Advance walk cycle phase based on speed
         p.walkCyclePhase += deltaTime * p.speed * 3.0f; // 3.0f: controls walk speed
         if (p.walkCyclePhase > 2.0f * M_PI) p.walkCyclePhase -= 2.0f * M_PI;
         if (p.walkTimer > p.walkDuration) {
             float angle = (rand() % 360) * (M_PI / 180.0f);
-            p.direction = glm::normalize(glm::vec3(cos(angle),0.0f,sin(angle)));
+            p.direction = glm::normalize(glm::vec3(cos(angle), 0.0f, sin(angle)));
             p.walkDuration = 1.0f + (rand() % 100) / 100.0f * 4.0f;
             p.walkTimer = 0.0f;
         }
@@ -55,12 +55,13 @@ void updatePedestrians(float deltaTime) {
         }
         // Avoid roads and mall area - same checks as main
         if (!((next.x >= -10.0f && next.x <= 10.0f) || (next.z >= -10.0f && next.z <= 10.0f) ||
-              fmod(fabs(next.x), 40.0f) < 1.0f || fmod(fabs(next.z), 40.0f) < 1.0f ||
-              ((next.x-60.0f)*(next.x-60.0f)+(next.z-20.0f)*(next.z-20.0f) < 40.0f*40.0f))) {
+            fmod(fabs(next.x), 40.0f) < 1.0f || fmod(fabs(next.z), 40.0f) < 1.0f ||
+            ((next.x - 60.0f) * (next.x - 60.0f) + (next.z - 20.0f) * (next.z - 20.0f) < 40.0f * 40.0f))) {
             p.position = next;
-        } else {
-            float angle = (rand() % 180 - 90) * (M_PI/180.0f);
-            glm::mat4 rot = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0,1,0));
+        }
+        else {
+            float angle = (rand() % 180 - 90) * (M_PI / 180.0f);
+            glm::mat4 rot = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0, 1, 0));
             glm::vec4 d = rot * glm::vec4(p.direction, 0.0f);
             p.direction = glm::normalize(glm::vec3(d));
         }
@@ -87,8 +88,8 @@ void renderPedestrian(const Pedestrian& p, Shader& shader, unsigned int cubeVAO,
 
     // Torso (cube)
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(p.position.x, legLength + torsoHeight/2.0f + bob, p.position.z));
-    model = glm::rotate(model, facing, glm::vec3(0,1,0));
+    model = glm::translate(model, glm::vec3(p.position.x, legLength + torsoHeight / 2.0f + bob, p.position.z));
+    model = glm::rotate(model, facing, glm::vec3(0, 1, 0));
     model = glm::scale(model, glm::vec3(torsoWidth, torsoHeight, torsoDepth));
     shader.SetMat4("model", model);
     shader.SetVec3("objectColor", p.color);
@@ -97,8 +98,8 @@ void renderPedestrian(const Pedestrian& p, Shader& shader, unsigned int cubeVAO,
 
     // Head (cube)
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(p.position.x, legLength + torsoHeight + headSize/2.0f + 0.03f + bob, p.position.z));
-    model = glm::rotate(model, facing, glm::vec3(0,1,0));
+    model = glm::translate(model, glm::vec3(p.position.x, legLength + torsoHeight + headSize / 2.0f + 0.03f + bob, p.position.z));
+    model = glm::rotate(model, facing, glm::vec3(0, 1, 0));
     model = glm::scale(model, glm::vec3(headSize, headSize, headSize));
     shader.SetMat4("model", model);
     shader.SetVec3("objectColor", glm::vec3(1.0f, 0.85f, 0.75f));
@@ -107,16 +108,16 @@ void renderPedestrian(const Pedestrian& p, Shader& shader, unsigned int cubeVAO,
 
     // Arms (cubes, animated, with hands)
     float armSwing = glm::radians(45.0f) * sin(p.walkCyclePhase); // More pronounced pendulum swing
-    for (int s = -1; s <=1; s+=2) {
+    for (int s = -1; s <= 1; s += 2) {
         // Shoulder position: at top of torso, below head
-        float shoulderY = legLength + torsoHeight - armWidth/2.0f + bob;
-        float shoulderX = p.position.x + s * (torsoWidth/2.0f + armWidth/2.0f);
+        float shoulderY = legLength + torsoHeight - armWidth / 2.0f + bob;
+        float shoulderX = p.position.x + s * (torsoWidth / 2.0f + armWidth / 2.0f);
         glm::mat4 armModel = glm::mat4(1.0f);
         armModel = glm::translate(armModel, glm::vec3(shoulderX, shoulderY, p.position.z));
-        armModel = glm::rotate(armModel, facing, glm::vec3(0,1,0));
+        armModel = glm::rotate(armModel, facing, glm::vec3(0, 1, 0));
         // Pendulum swing: rotate at shoulder, then move arm down
-        armModel = glm::rotate(armModel, s*armSwing, glm::vec3(1,0,0));
-        armModel = glm::translate(armModel, glm::vec3(0, -armLength/2.0f, 0));
+        armModel = glm::rotate(armModel, s * armSwing, glm::vec3(1, 0, 0));
+        armModel = glm::translate(armModel, glm::vec3(0, -armLength / 2.0f, 0));
         armModel = glm::scale(armModel, glm::vec3(armWidth, armLength, armDepth));
         shader.SetMat4("model", armModel);
         shader.SetVec3("objectColor", p.color * 0.9f);
@@ -126,8 +127,8 @@ void renderPedestrian(const Pedestrian& p, Shader& shader, unsigned int cubeVAO,
         // Hand (cube at end of arm)
         glm::mat4 handModel = glm::mat4(1.0f);
         handModel = glm::translate(handModel, glm::vec3(shoulderX, shoulderY, p.position.z));
-        handModel = glm::rotate(handModel, facing, glm::vec3(0,1,0));
-        handModel = glm::rotate(handModel, s*armSwing, glm::vec3(1,0,0));
+        handModel = glm::rotate(handModel, facing, glm::vec3(0, 1, 0));
+        handModel = glm::rotate(handModel, s * armSwing, glm::vec3(1, 0, 0));
         handModel = glm::translate(handModel, glm::vec3(0, -armLength, 0));
         handModel = glm::scale(handModel, glm::vec3(handSize, handSize, handSize));
         shader.SetMat4("model", handModel);
@@ -137,15 +138,15 @@ void renderPedestrian(const Pedestrian& p, Shader& shader, unsigned int cubeVAO,
     }
     // Legs (cubes, animated)
     float legSwing = glm::radians(35.0f) * sin(p.walkCyclePhase + M_PI);
-    for (int s = -1; s <=1; s+=2) {
+    for (int s = -1; s <= 1; s += 2) {
         model = glm::mat4(1.0f);
-        float hipY = legLength/2.0f + bob;
-        float hipX = p.position.x + s * (torsoWidth/2.0f - legWidth/2.0f);
+        float hipY = legLength / 2.0f + bob;
+        float hipX = p.position.x + s * (torsoWidth / 2.0f - legWidth / 2.0f);
         model = glm::translate(model, glm::vec3(hipX, hipY, p.position.z));
-        model = glm::rotate(model, facing, glm::vec3(0,1,0));
-        model = glm::translate(model, glm::vec3(0, legLength/2.0f, 0));
-        model = glm::rotate(model, s*legSwing, glm::vec3(1,0,0));
-        model = glm::translate(model, glm::vec3(0, -legLength/2.0f, 0));
+        model = glm::rotate(model, facing, glm::vec3(0, 1, 0));
+        model = glm::translate(model, glm::vec3(0, legLength / 2.0f, 0));
+        model = glm::rotate(model, s * legSwing, glm::vec3(1, 0, 0));
+        model = glm::translate(model, glm::vec3(0, -legLength / 2.0f, 0));
         model = glm::scale(model, glm::vec3(legWidth, legLength, legDepth));
         shader.SetMat4("model", model);
         shader.SetVec3("objectColor", p.color * 0.7f);

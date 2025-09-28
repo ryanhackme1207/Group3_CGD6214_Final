@@ -3,10 +3,12 @@
 #include <iostream>
 #include <algorithm>
 
-Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0) {}
+#include "stb_image.h"
+
+Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0) {}
 
 Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices)
-    : VAO(0), VBO(0), EBO(0), indexCount(0)
+    : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0)
 {
     if (vertices.empty()) return;
 
@@ -39,11 +41,36 @@ Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& 
     glBindVertexArray(0);
 }
 
+// New constructor that attempts to load a texture
+Mesh::Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices, const std::string& texturePath)
+    : Mesh(vertices, indices)
+{
+    if (!texturePath.empty()) {
+        textureID = LoadTextureFromFile(texturePath);
+        if (textureID == 0) {
+            std::cerr << "Warning: failed to load texture: " << texturePath << std::endl;
+        }
+    }
+}
+
 Mesh::~Mesh()
 {
+    if (textureID) glDeleteTextures(1, &textureID);
     if (EBO) glDeleteBuffers(1, &EBO);
     if (VBO) glDeleteBuffers(1, &VBO);
     if (VAO) glDeleteVertexArrays(1, &VAO);
+}
+
+void Mesh::SetTexture(const std::string& texturePath)
+{
+    if (textureID) {
+        glDeleteTextures(1, &textureID);
+        textureID = 0;
+    }
+    if (!texturePath.empty()) {
+        textureID = LoadTextureFromFile(texturePath);
+        if (textureID == 0) std::cerr << "SetTexture: failed to load " << texturePath << std::endl;
+    }
 }
 
 void Mesh::Draw(Shader& shader, const glm::mat4& modelMatrix)
@@ -51,11 +78,55 @@ void Mesh::Draw(Shader& shader, const glm::mat4& modelMatrix)
     if (VAO == 0) return;
 
     shader.SetMat4("model", modelMatrix);
+    if (textureID) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        shader.SetInt("diffuseTex", 0);
+        shader.SetBool("hasTexture", true);
+    }
+    else {
+        shader.SetBool("hasTexture", false);
+    }
     glBindVertexArray(VAO);
     if (indexCount > 0) {
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
     }
     glBindVertexArray(0);
+
+    // Unbind texture and clear hasTexture uniform to avoid affecting subsequent procedural draws
+    if (textureID) {
+        glBindTexture(GL_TEXTURE_2D, 0);
+        shader.SetBool("hasTexture", false);
+    }
+}
+
+GLuint Mesh::LoadTextureFromFile(const std::string& path)
+{
+    int width, height, nrChannels;
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+    if (!data) {
+        std::cerr << "Failed to load texture file: " << path << std::endl;
+        return 0;
+    }
+    GLenum format = GL_RGB;
+    if (nrChannels == 1) format = GL_RED;
+    else if (nrChannels == 3) format = GL_RGB;
+    else if (nrChannels == 4) format = GL_RGBA;
+
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    stbi_image_free(data);
+    return tex;
 }
 
 // Simple helper to create a cube mesh (returns by value; user can wrap in shared_ptr)
@@ -70,6 +141,6 @@ Mesh Mesh::CreateCube()
         // ... other faces (omitted for brevity) -- not needed for initial tests
     };
     // simple index list for a single quad (placeholder)
-    std::vector<unsigned int> indices = {0,1,2, 0,2,3};
+    std::vector<unsigned int> indices = { 0,1,2, 0,2,3 };
     return Mesh(vertices, indices);
 }

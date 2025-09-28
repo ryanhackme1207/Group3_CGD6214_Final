@@ -29,28 +29,28 @@ public:
     glm::vec3 Up;
     glm::vec3 Right;
     glm::vec3 WorldUp;
-    
+
     // Camera options
     float MovementSpeed;
     float MouseSensitivity;
     float Zoom;
-    
+
     // Euler Angles
     float Yaw;
     float Pitch;
-    
+
     // Smooth movement
     bool SmoothMovement;
     float Smoothness;
     glm::vec3 TargetPosition;
     glm::vec3 Velocity;
-    
+
     // Collision boundaries
     float BoundaryMinX, BoundaryMaxX;
     float BoundaryMinZ, BoundaryMaxZ;
     float BoundaryMinY, BoundaryMaxY;
     float CollisionRadius;
-    
+
     // Camera modes
     enum CameraMode {
         FREE_FLY,
@@ -59,53 +59,53 @@ public:
         CINEMATIC
     };
     CameraMode Mode;
-    
+
     // Orbital camera specific
     glm::vec3 OrbitTarget;
     float OrbitDistance;
     float OrbitSpeed;
-    
+
     // Constructors
     Camera(glm::vec3 position = glm::vec3(0.0f, 5.0f, 10.0f),
-           glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f),
-           float yaw = YAW, float pitch = PITCH);
+        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f),
+        float yaw = YAW, float pitch = PITCH);
     Camera(float posX, float posY, float posZ,
-           float upX, float upY, float upZ,
-           float yaw, float pitch);
-    
+        float upX, float upY, float upZ,
+        float yaw, float pitch);
+
     // Core functions
     glm::mat4 GetViewMatrix();
     glm::mat4 GetProjectionMatrix(float aspectRatio, float nearPlane = 0.1f, float farPlane = 1000.0f);
-    
+
     // Input processing
     void ProcessKeyboard(Camera_Movement direction, float deltaTime);
     void ProcessMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
     void ProcessMouseScroll(float yoffset);
-    
+
     // Boundary and collision system
     void SetBoundaries(float minX, float maxX, float minZ, float maxZ,
-                      float minY = 1.0f, float maxY = 50.0f);
+        float minY = 1.0f, float maxY = 50.0f);
     void SetCollisionRadius(float radius);
     bool CheckCollisionWithBuilding(glm::vec3 newPosition, const std::vector<glm::vec3>& buildingPositions,
-                                   const std::vector<glm::vec3>& buildingSizes);
+        const std::vector<glm::vec3>& buildingSizes);
     void ApplyBoundaries();
-    
+
     // Smooth movement system
     void EnableSmoothMovement(bool enable, float smoothness = 5.0f);
     void UpdateSmoothMovement(float deltaTime);
     void SetTargetPosition(glm::vec3 target);
-    
+
     // Camera modes
     void SetCameraMode(CameraMode mode);
     void UpdateOrbitalCamera(float deltaTime);
     void SetOrbitTarget(glm::vec3 target, float distance = 15.0f);
-    
+
     // Utility functions
     void ResetToDefault();
     glm::vec3 GetPosition() const { return Position; }
     glm::vec3 GetFront() const { return Front; }
     float GetZoom() const { return Zoom; }
-    
+
     // Cinematic camera functions
     void SmoothTransitionTo(glm::vec3 newPosition, glm::vec3 newTarget, float duration);
     bool IsTransitioning() const { return isTransitioning; }
@@ -120,7 +120,7 @@ private:
     glm::vec3 endPosition;
     glm::vec3 startTarget;
     glm::vec3 endTarget;
-    
+
     // Helper functions
     void updateCameraVectors();
     float lerp(float a, float b, float t);
