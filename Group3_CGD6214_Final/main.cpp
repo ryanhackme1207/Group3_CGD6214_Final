@@ -13,7 +13,7 @@ using namespace glm;
 #include "Shader.h"
 #include "Mesh.h"
 #include "Model.h"
-#include "SceneNode.h"
+
 #include "SceneGraph.h"
 #include "LODManager.h"
 #include "SpatialPartition.h"
@@ -940,266 +940,147 @@ int main()
             glDisable(GL_BLEND);
         }
 
-        // Create realistic residential neighborhoods
-        for (int x = -80; x <= 80; x += 20)  // Wider spacing for realistic lots
+        // Create realistic residential neighborhoods (denser, varied heights)
+        for (int x = -100; x <= 100; x += 10)  // higher density (every 10m)
         {
-            for (int z = -80; z <= 80; z += 20)
+            for (int z = -100; z <= 100; z += 10)
             {
-                // Create main roads (skip buildings on roads)
-                if ((x >= -10 && x <= 10) || (z >= -10 && z <= 10)) {
-                    // Render road surface
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(x, 0.01f, z));
-                    model = glm::scale(model, glm::vec3(18.0f, 0.02f, 18.0f));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", glm::vec3(0.3f, 0.3f, 0.3f));  // Asphalt
+                // Avoid main highways and central avenues: keep generous margins
+                if ((x >= -15 && x <= 15) || (z >= -15 && z <= 15)) continue;
 
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                // Avoid secondary grid roads at multiples of 40 (wider margin)
+                if (fmod(fabs((float)x), 40.0f) < 2.0f || fmod(fabs((float)z), 40.0f) < 2.0f) continue;
 
-                    continue;
-                }
+                // Avoid mall area and its parking approach
+                float dxMall = x - 60.0f; float dzMall = z - 20.0f;
+                if (dxMall*dxMall + dzMall*dzMall < 35.0f*35.0f) continue;
 
-                // Create secondary streets
-                if (x % 40 == 0 || z % 40 == 0) {
-                    // Render smaller road
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(x, 0.01f, z));
-                    model = glm::scale(model, glm::vec3(15.0f, 0.02f, 15.0f));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", glm::vec3(0.35f, 0.35f, 0.35f));  // Lighter asphalt
-
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    continue;
-                }
-
-                // Determine building type based on position and random factors
-                int buildingType = rand() % 100;
-                int colorIndex = rand() % 8;
-                int roofColorIndex = rand() % 8;
-
-                float width, depth, height;
-                bool hasTriangularRoof = false;
-                bool isSemiDetached = false;
-
-                if (buildingType < 40) {
-                    // Single family house (40% chance)
-                    width = 8.0f + (rand() % 3) * 2.0f;     // 8-12m wide
-                    depth = 10.0f + (rand() % 3) * 2.0f;    // 10-14m deep
-                    height = 6.0f + (rand() % 2) * 2.0f;    // 6-8m tall (2 stories)
-                    hasTriangularRoof = true;
-                }
-                else if (buildingType < 65) {
-                    // Semi-detached house (25% chance)
-                    width = 12.0f + (rand() % 2) * 2.0f;    // 12-14m wide
-                    depth = 8.0f + (rand() % 2) * 2.0f;     // 8-10m deep
-                    height = 7.0f + (rand() % 2) * 1.0f;    // 7-8m tall
-                    hasTriangularRoof = true;
-                    isSemiDetached = true;
-                }
-                else if (buildingType < 85) {
-                    // Townhouse (20% chance)
-                    width = 6.0f + (rand() % 2) * 1.0f;     // 6-7m wide
-                    depth = 12.0f + (rand() % 2) * 2.0f;    // 12-14m deep
-                    height = 8.0f + (rand() % 2) * 2.0f;    // 8-10m tall (2-3 stories)
-                    hasTriangularRoof = (rand() % 2) == 0;  // 50% chance of triangular roof
-                }
-                else {
-                    // Small apartment building (15% chance)
-                    width = 15.0f + (rand() % 3) * 3.0f;    // 15-21m wide
-                    depth = 12.0f + (rand() % 2) * 3.0f;    // 12-15m deep
-                    height = 12.0f + (rand() % 3) * 3.0f;   // 12-18m tall (3-4 stories)
-                    hasTriangularRoof = false;  // Flat roof for apartments
-                }
-
-                // Add some random variation in position for more natural look
+                // Small random offset to avoid strict grid look
                 float xOffset = ((rand() % 100) / 100.0f - 0.5f) * 4.0f;
                 float zOffset = ((rand() % 100) / 100.0f - 0.5f) * 4.0f;
                 float actualX = x + xOffset;
                 float actualZ = z + zOffset;
 
-                // Clamp residential footprints so they fit within a lot and don't overlap nearby infrastructure
-                const float residentialMaxW = 12.0f;
-                const float residentialMaxD = 14.0f;
-                width = glm::min(width, residentialMaxW);
-                depth = glm::min(depth, residentialMaxD);
+                // Choose building type based on distance to city center so center has taller buildings
+                float distCenter = sqrtf((float)(x * x + z * z));
+                int buildingType;
+                int r = rand() % 100;
+                if (distCenter < 40.0f) {
+                    // City core - higher chance of mixed mid/high-rise
+                    if (r < 20) buildingType = 4;       // high-rise
+                    else if (r < 55) buildingType = 3;  // small apartment / mid-rise
+                    else if (r < 80) buildingType = 2;  // townhouse
+                    else buildingType = 1;              // semi-detached
+                }
+                else if (distCenter < 80.0f) {
+                    // Inner suburbs - more apartments and townhouses
+                    if (r < 10) buildingType = 4;
+                    else if (r < 40) buildingType = 3;
+                    else if (r < 75) buildingType = 2;
+                    else buildingType = 0; // house
+                }
+                else {
+                    // Outer suburbs - mostly houses
+                    if (r < 50) buildingType = 0;
+                    else if (r < 75) buildingType = 2;
+                    else buildingType = 1;
+                }
 
-                // Ensure building remains within lot boundaries (keep some padding from road/lights)
-                float halfW = width * 0.5f;
-                float halfD = depth * 0.5f;
-                float lotHalfRes = 10.0f; // half spacing between grid centers
-                float paddingRes = 2.5f; // slightly larger padding so buildings don't touch
+                float width, depth, height;
+                bool hasTriangularRoof = false;
+
+                switch (buildingType) {
+                case 0: // single family house
+                    width = 7.0f + (rand() % 4) * 1.5f;    // 7-13
+                    depth = 8.0f + (rand() % 3) * 1.5f;    // 8-11
+                    height = 5.5f + (rand() % 2) * 2.0f;   // 5.5-7.5 (1-2 stories)
+                    hasTriangularRoof = true;
+                    break;
+                case 1: // semi-detached
+                    width = 11.0f + (rand() % 3) * 1.5f;   // 11-14
+                    depth = 8.0f + (rand() % 3) * 1.0f;    // 8-10
+                    height = 7.0f + (rand() % 2) * 1.0f;   // 7-8
+                    hasTriangularRoof = true;
+                    break;
+                case 2: // townhouse
+                    width = 5.0f + (rand() % 2) * 1.0f;    // 5-6
+                    depth = 10.0f + (rand() % 3) * 1.5f;   // 10-14
+                    height = 8.0f + (rand() % 3) * 1.5f;   // 8-12
+                    hasTriangularRoof = (rand() % 2) == 0;
+                    break;
+                case 3: // small apartment / mid-rise
+                    width = 12.0f + (rand() % 4) * 2.0f;   // 12-20
+                    depth = 10.0f + (rand() % 4) * 2.0f;   // 10-18
+                    height = 12.0f + (rand() % 6) * 3.0f;  // 12-30 (3-10 stories)
+                    hasTriangularRoof = false;
+                    break;
+                case 4: // high-rise / skyscraper (city center)
+                    width = 12.0f + (rand() % 6) * 4.0f;   // 12-36
+                    depth = 12.0f + (rand() % 6) * 4.0f;   // 12-36
+                    height = 40.0f + (rand() % 20) * 10.0f; // 40-240m
+                    hasTriangularRoof = false;
+                    break;
+                default:
+                    width = 8.0f; depth = 10.0f; height = 6.0f;
+                }
+
+                // Clamp dimensions to reasonable limits so they fit in lots
+                width = glm::min(width, 40.0f);
+                depth = glm::min(depth, 40.0f);
+
+                // Ensure building remains within lot boundaries (avoid overlap with roads)
+                float lotHalfRes = 8.0f; // smaller lot due to higher density
+                float paddingRes = 1.5f;
                 float limitRes = lotHalfRes - paddingRes;
-
-                // Try multiple random offsets to avoid overlap/sticking to neighbors
-                bool placed = false;
-                const int maxAttempts = 6;
-                for (int attempt = 0; attempt < maxAttempts && !placed; ++attempt) {
-                    float tryX = x + (((rand() % 100) / 100.0f - 0.5f) * limitRes * 0.6f);
-                    float tryZ = z + (((rand() % 100) / 100.0f - 0.5f) * limitRes * 0.6f);
-
-                    // Ensure within lot bounds
-                    tryX = glm::clamp(tryX, x - limitRes + halfW, x + limitRes - halfW);
-                    tryZ = glm::clamp(tryZ, z - limitRes + halfD, z + limitRes - halfD);
-
-                    // Check against nearby lots to reduce sticking: simple grid spacing check
-                    bool tooClose = false;
-                    // check direct neighbors in grid (8-neighborhood)
-                    for (int nx = -1; nx <= 1 && !tooClose; ++nx) {
-                        for (int nz = -1; nz <= 1; ++nz) {
-                            if (nx == 0 && nz == 0) continue;
-                            float neighborCenterX = x + nx * 20.0f;
-                            float neighborCenterZ = z + nz * 20.0f;
-                            // If neighbor center is too close (distance less than half lot minus margin), mark tooClose
-                            float dx = tryX - neighborCenterX;
-                            float dz = tryZ - neighborCenterZ;
-                            if (fabs(dx) < (halfW + 6.0f) && fabs(dz) < (halfD + 6.0f)) {
-                                tooClose = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (tooClose) {
-                        // shrink slightly and retry
-                        width = glm::max(4.0f, width - 0.5f);
-                        depth = glm::max(4.0f, depth - 0.5f);
-                        halfW = width * 0.5f;
-                        halfD = depth * 0.5f;
-                        continue;
-                    }
-
-                    // Accept this placement
-                    actualX = tryX;
-                    actualZ = tryZ;
-                    placed = true;
-                }
-
-                if (!placed) {
-                    // As fallback, place at clamped center
-                    actualX = glm::clamp(actualX, x - limitRes + halfW, x + limitRes - halfW);
-                    actualZ = glm::clamp(actualZ, z - limitRes + halfD, z + limitRes - halfD);
-                }
+                actualX = glm::clamp(actualX, (float)x - limitRes + width*0.5f, (float)x + limitRes - width*0.5f);
+                actualZ = glm::clamp(actualZ, (float)z - limitRes + depth*0.5f, (float)z + limitRes - depth*0.5f);
 
                 // Render main building
                 model = glm::mat4(1.0f);
                 model = glm::translate(model, glm::vec3(actualX, height / 2.0f, actualZ));
                 model = glm::scale(model, glm::vec3(width, height, depth));
                 buildingShader.SetMat4("model", model);
-                buildingShader.SetVec3("objectColor", houseColors[colorIndex]);
+
+                // Choose color palette based on type
+                glm::vec3 color;
+                if (buildingType == 4) color = glm::vec3(0.6f, 0.6f, 0.68f);
+                else if (buildingType == 3) color = glm::vec3(0.78f, 0.78f, 0.82f);
+                else if (buildingType == 2) color = glm::vec3(0.8f, 0.7f, 0.6f);
+                else color = houseColors[rand() % 8];
+
+                buildingShader.SetVec3("objectColor", color);
                 glBindVertexArray(cubeVAO);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
 
                 // Add triangular roof if applicable
                 if (hasTriangularRoof) {
-                    float roofHeight = glm::clamp(glm::min(width, depth) * 0.35f, 1.0f, 4.0f);
+                    float roofHeight = glm::clamp(glm::min(width, depth) * 0.35f, 0.8f, 4.0f);
                     model = glm::mat4(1.0f);
                     model = glm::translate(model, glm::vec3(actualX, height + roofHeight / 2.0f + 0.05f, actualZ));
                     model = glm::scale(model, glm::vec3(width * 1.02f, roofHeight, depth * 1.02f));
                     buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", roofColors[roofColorIndex]);
+                    buildingShader.SetVec3("objectColor", roofColors[rand() % 8]);
                     glBindVertexArray(roofVAO);
                     glDrawArrays(GL_TRIANGLES, 0, 18); // roof VAO has 18 vertices
-                    // restore cube vao for following draws
                     glBindVertexArray(cubeVAO);
                 }
 
-                // Add windows (front facade)
-                int numWindows = (int)height / 3;
-                for (int w = 0; w < numWindows; ++w) {
-                    float winY = 1.0f + w * 2.5f;
-                    float winWidth = width * 0.18f;
-                    float winHeight = height * 0.18f;
-                    float winZ = actualZ + depth / 2.0f + 0.01f;
-                    float winX = actualX - width * 0.25f;
-                    for (int i = 0; i < 2; ++i) {
-                        model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(winX + i * width * 0.5f, winY, winZ));
-                        model = glm::scale(model, glm::vec3(winWidth, winHeight, 0.05f));
-                        buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.6f, 0.8f, 0.95f)); // Glass blue
-                        glBindVertexArray(cubeVAO);
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
+                // Optional details: windows & doors (simplified)
+                if (height > 5.0f && buildingType != 4) {
+                    int numWindowsY = glm::max(1, (int)(height / 3.0f));
+                    float winW = glm::min(1.2f, width * 0.18f);
+                    float winH = glm::min(1.2f, height * 0.12f);
+                    for (int wy = 0; wy < numWindowsY; ++wy) {
+                        float wyPos = 1.0f + wy * 2.5f;
+                        for (int iw = 0; iw < 2; ++iw) {
+                            model = glm::mat4(1.0f);
+                            model = glm::translate(model, glm::vec3(actualX - width*0.25f + iw * width*0.5f, wyPos, actualZ + depth/2.0f + 0.01f));
+                            model = glm::scale(model, glm::vec3(winW, winH, 0.05f));
+                            buildingShader.SetMat4("model", model);
+                            buildingShader.SetVec3("objectColor", glm::vec3(0.6f, 0.8f, 0.95f));
+                            glDrawArrays(GL_TRIANGLES, 0, 36);
+                        }
                     }
-                }
-
-                // Add door (front facade, ground level)
-                float doorWidth = width * 0.22f;
-                float doorHeight = height * 0.32f;
-                float doorX = actualX;
-                float doorY = doorHeight / 2.0f;
-                float doorZ = actualZ + depth / 2.0f + 0.01f;
-                model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(doorX, doorY, doorZ));
-                model = glm::scale(model, glm::vec3(doorWidth, doorHeight, 0.07f));
-                buildingShader.SetMat4("model", model);
-                buildingShader.SetVec3("objectColor", glm::vec3(0.7f, 0.5f, 0.3f)); // Brown door
-                glBindVertexArray(cubeVAO);
-                glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                // Add balconies for apartments
-                if (!hasTriangularRoof && height > 12.0f) {
-                    int numBalconies = (int)height / 6;
-                    for (int b = 0; b < numBalconies; ++b) {
-                        float balY = 2.0f + b * 5.0f;
-                        float balWidth = width * 0.5f;
-                        float balDepth = 1.0f;
-                        float balX = actualX;
-                        float balZ = actualZ + depth / 2.0f + balDepth / 2.0f + 0.02f;
-                        model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(balX, balY, balZ));
-                        model = glm::scale(model, glm::vec3(balWidth, 0.2f, balDepth));
-                        buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.7f, 0.7f, 0.7f)); // Balcony gray
-                        glBindVertexArray(cubeVAO);
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-                    }
-                }
-
-                // Add rooftop details (air conditioner units)
-                if (!hasTriangularRoof && (rand() % 2 == 0)) {
-                    int numUnits = 1 + rand() % 2;
-                    for (int u = 0; u < numUnits; ++u) {
-                        float unitX = actualX + (width * 0.3f) * (u == 0 ? -1 : 1);
-                        float unitY = height + 0.35f;
-                        float unitZ = actualZ + depth * 0.2f;
-                        model = glm::mat4(1.0f);
-                        model = glm::translate(model, glm::vec3(unitX, unitY, unitZ));
-                        model = glm::scale(model, glm::vec3(0.7f, 0.35f, 0.7f));
-                        buildingShader.SetMat4("model", model);
-                        buildingShader.SetVec3("objectColor", glm::vec3(0.85f, 0.85f, 0.85f)); // AC unit
-                        glBindVertexArray(cubeVAO);
-                        glDrawArrays(GL_TRIANGLES, 0, 36);
-                    }
-                }
-
-                // Add a small garage or shed occasionally, placed to the side so it doesn't touch main building
-                if ((rand() % 100) < 20) { // 20% chance
-                    float gW = glm::clamp(width * 0.5f, 2.0f, 5.0f);
-                    float gD = glm::clamp(depth * 0.4f, 2.0f, 5.0f);
-                    float gH = glm::clamp(height * 0.5f, 1.5f, 3.5f);
-                    float side = ((rand() % 2) == 0) ? -1.0f : 1.0f;
-                    float gx = actualX + side * (halfW + gW * 0.5f + 1.0f);
-                    float gz = actualZ + ((rand() % 100) / 100.0f - 0.5f) * 2.0f;
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(gx, gH / 2.0f, gz));
-                    model = glm::scale(model, glm::vec3(gW, gH, gD));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", glm::vec3(0.6f, 0.55f, 0.5f));
-                    glBindVertexArray(cubeVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                    // small roof for garage
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(gx, gH + 0.6f, gz));
-                    model = glm::scale(model, glm::vec3(gW * 1.02f, 0.6f, gD * 1.02f));
-                    buildingShader.SetMat4("model", model);
-                    buildingShader.SetVec3("objectColor", glm::vec3(0.35f, 0.25f, 0.2f));
-                    glBindVertexArray(roofVAO);
-                    glDrawArrays(GL_TRIANGLES, 0, 18);
-                    glBindVertexArray(cubeVAO);
                 }
             }
         }
@@ -1363,7 +1244,7 @@ void processInput(GLFWwindow* window)
 GLuint createCube()
 {
     // Cube vertices with normals and texture coordinates
-    float vertices[] = {
+    static const float vertices[] = {
         // positions          // normals           // texture coords
         -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  0.0f,
          0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
@@ -1432,293 +1313,10 @@ GLuint createCube()
     return VAO;
 }
 
-// Update car positions and handle traffic flow
-void updateCars(float deltaTime) {
-    for (auto it = cars.begin(); it != cars.end();) {
-        Car& car = *it;
-
-        // Move car forward
-        car.position += car.direction * car.speed * deltaTime;
-
-        // Remove cars that are too far away
-        if (abs(car.position.x) > 150.0f || abs(car.position.z) > 150.0f) {
-            it = cars.erase(it);
-        }
-        else {
-            ++it;
-        }
-    }
-}
-
-// Spawn new cars at road entrances
-void spawnCar() {
-    if (cars.size() >= 40) return;  // Limit number of cars
-
-    // Realistic car colors
-    glm::vec3 carColors[] = {
-        glm::vec3(0.1f, 0.1f, 0.1f),   // Black
-        glm::vec3(0.9f, 0.9f, 0.9f),   // White
-        glm::vec3(0.7f, 0.7f, 0.7f),   // Silver
-        glm::vec3(0.8f, 0.1f, 0.1f),   // Red
-        glm::vec3(0.1f, 0.3f, 0.8f),   // Blue
-        glm::vec3(0.2f, 0.2f, 0.2f),   // Dark gray
-        glm::vec3(0.6f, 0.3f, 0.1f),   // Brown/Bronze
-        glm::vec3(0.1f, 0.5f, 0.2f),   // Dark green
-        glm::vec3(0.8f, 0.8f, 0.1f),   // Yellow
-        glm::vec3(0.5f, 0.1f, 0.5f)    // Purple
-    };
-
-    int colorIndex = rand() % 10;
-    int roadType = rand() % 2;  // Focus on main highways
-    int lane = rand() % 2;      // Choose lane
-    int carType = rand() % 4;   // Choose car type (sedan, SUV, truck, hatchback)
-    float speed = 18.0f + (rand() % 8) * 2.5f;  // 18-38 units/second
-
-    glm::vec3 position, direction;
-
-    switch (roadType) {
-    case 0: // East-West Highway
-        if (lane == 0) {  // Right lane (going East)
-            position = glm::vec3(-120.0f, 0.8f, -6.0f);
-            direction = glm::vec3(1.0f, 0.0f, 0.0f);
-        }
-        else {  // Left lane (going West)
-            position = glm::vec3(120.0f, 0.8f, 6.0f);
-            direction = glm::vec3(-1.0f, 0.0f, 0.0f);
-        }
-        break;
-
-    case 1: // North-South Highway
-        if (lane == 0) {  // Right lane (going North)
-            position = glm::vec3(6.0f, 0.8f, -120.0f);
-            direction = glm::vec3(0.0f, 0.0f, 1.0f);
-        }
-        else {  // Left lane (going South)
-            position = glm::vec3(-6.0f, 0.8f, 120.0f);
-            direction = glm::vec3(0.0f, 0.0f, -1.0f);
-        }
-        break;
-    }
-
-    cars.emplace_back(position, direction, carColors[colorIndex], speed, lane, roadType, carType);
-}
-
-// Render road infrastructure (signs, lights, barriers)
-void renderRoadInfrastructure(Shader& shader, GLuint cubeVAO, float currentTime) {
-    glm::mat4 model;
-
-    // === STREET LIGHTS ===
-    // Highway street lights
-    for (int i = -120; i <= 120; i += 30) {  // Every 30 units
-        // Light poles on highway
-        for (int side = -1; side <= 1; side += 2) {  // Both sides
-            float zPos = side * 15.0f;  // 15 units from road center
-
-            // Light pole
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(i, 5.0f, zPos));
-            model = glm::scale(model, glm::vec3(0.3f, 10.0f, 0.3f));
-            shader.SetMat4("model", model);
-            shader.SetVec3("objectColor", glm::vec3(0.4f, 0.4f, 0.4f));  // Gray pole
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            // Light fixture (with animated brightness)
-            float brightness = 0.8f + 0.2f * sin(currentTime * 0.5f + i * 0.1f);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(i, 9.5f, zPos));
-            model = glm::scale(model, glm::vec3(1.0f, 0.8f, 1.0f));
-            shader.SetMat4("model", model);
-            shader.SetVec3("objectColor", glm::vec3(brightness, brightness, 0.9f));  // Cool light
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            // --- STREET LIGHT GLOW EFFECT ---
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(i, 9.5f, zPos));
-            model = glm::scale(model, glm::vec3(2.2f, 1.8f, 2.2f)); // Larger, soft glow
-            shader.SetMat4("model", model);
-            shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 0.8f)); // Warm glow
-            // If your shader supports alpha, set alpha here. Otherwise, use color intensity.
-            glBindVertexArray(cubeVAO);
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-            glDisable(GL_BLEND);
-        }
-    }
-
-    // Street lights on North-South highway
-    for (int i = -120; i <= 120; i += 30) {
-        if (i >= -15 && i <= 15) continue;  // Skip intersection
-
-        for (int side = -1; side <= 1; side += 2) {
-            float xPos = side * 15.0f;
-
-            // Light pole
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(xPos, 5.0f, i));
-            model = glm::scale(model, glm::vec3(0.3f, 10.0f, 0.3f));
-            shader.SetMat4("model", model);
-            shader.SetVec3("objectColor", glm::vec3(0.4f, 0.4f, 0.4f));
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            // Light fixture
-            float brightness = 0.8f + 0.2f * sin(currentTime * 0.5f + i * 0.1f);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(xPos, 9.5f, i));
-            model = glm::scale(model, glm::vec3(1.0f, 0.8f, 1.0f));
-            shader.SetMat4("model", model);
-            shader.SetVec3("objectColor", glm::vec3(brightness, brightness, 0.9f));
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            // --- STREET LIGHT GLOW EFFECT ---
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(xPos, 9.5f, i));
-            model = glm::scale(model, glm::vec3(2.2f, 1.8f, 2.2f)); // Larger, soft glow
-            shader.SetMat4("model", model);
-            shader.SetVec3("objectColor", glm::vec3(1.0f, 1.0f, 0.8f)); // Warm glow
-            // If your shader supports alpha, set alpha here. Otherwise, use color intensity.
-            glBindVertexArray(cubeVAO);
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-            glDisable(GL_BLEND);
-        }
-    }
-
-    // === ROAD SIGNS ===
-    // Highway signs
-    std::vector<glm::vec3> signPositions = {
-        glm::vec3(-90.0f, 0.0f, -18.0f),  // Highway entrance signs
-        glm::vec3(90.0f, 0.0f, 18.0f),
-        glm::vec3(-18.0f, 0.0f, -90.0f),
-        glm::vec3(18.0f, 0.0f, 90.0f),
-        glm::vec3(-60.0f, 0.0f, -18.0f),  // Distance signs
-        glm::vec3(60.0f, 0.0f, 18.0f),
-    };
-
-    for (const auto& signPos : signPositions) {
-        // Sign post
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(signPos.x, 2.5f, signPos.z));
-        model = glm::scale(model, glm::vec3(0.2f, 5.0f, 0.2f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.5f, 0.5f, 0.5f));  // Metal post
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Sign board (green highway sign)
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(signPos.x, 4.0f, signPos.z));
-        model = glm::scale(model, glm::vec3(4.0f, 1.5f, 0.1f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.1f, 0.6f, 0.1f));  // Highway green
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Sign text area (white)
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(signPos.x, 4.0f, signPos.z + 0.05f));
-        model = glm::scale(model, glm::vec3(3.5f, 1.0f, 0.02f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.9f));  // White text area
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
-
-    // === HIGHWAY BARRIERS ===
-    // Central barriers on highways
-    for (int i = -120; i <= 120; i += 3) {
-        // Skip intersection area
-        if (i >= -20 && i <= 20) continue;
-
-        // Concrete barrier on East-West highway
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(i, 0.8f, 0.0f));
-        model = glm::scale(model, glm::vec3(3.0f, 1.6f, 0.5f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.7f, 0.7f, 0.7f));  // Concrete gray
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
-
-    for (int i = -120; i <= 120; i += 3) {
-        if (i >= -20 && i <= 20) continue;
-
-        // Concrete barrier on North-South highway  
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.8f, i));
-        model = glm::scale(model, glm::vec3(0.5f, 1.6f, 3.0f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.7f, 0.7f, 0.7f));
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
-
-    // === TRAFFIC SIGNALS ===
-    // Traffic lights at major intersections
-    std::vector<glm::vec3> trafficLightPositions = {
-        glm::vec3(-20.0f, 0.0f, -20.0f),  // Four corners of main intersection
-        glm::vec3(20.0f, 0.0f, -20.0f),
-        glm::vec3(-20.0f, 0.0f, 20.0f),
-        glm::vec3(20.0f, 0.0f, 20.0f)
-    };
-
-    for (const auto& tlPos : trafficLightPositions) {
-        // Traffic light pole
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(tlPos.x, 4.0f, tlPos.z));
-        model = glm::scale(model, glm::vec3(0.3f, 8.0f, 0.3f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.3f, 0.3f, 0.3f));
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Traffic light housing
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(tlPos.x, 7.0f, tlPos.z));
-        model = glm::scale(model, glm::vec3(0.8f, 2.0f, 0.8f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", glm::vec3(0.2f, 0.2f, 0.2f));
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Animated traffic lights (cycling through colors)
-        float cycle = fmod(currentTime, 9.0f);  // 9-second cycle
-        glm::vec3 lightColor;
-        if (cycle < 3.0f) {
-            lightColor = glm::vec3(0.9f, 0.1f, 0.1f);  // Red
-        }
-        else if (cycle < 4.0f) {
-            lightColor = glm::vec3(0.9f, 0.9f, 0.1f);  // Yellow
-        }
-        else {
-            lightColor = glm::vec3(0.1f, 0.9f, 0.1f);  // Green
-        }
-
-        // Active light
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(tlPos.x, 7.0f, tlPos.z + 0.5f));
-        model = glm::scale(model, glm::vec3(0.4f, 0.4f, 0.1f));
-        shader.SetMat4("model", model);
-        shader.SetVec3("objectColor", lightColor);
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-    }
-}
-
-// Stub implementation for unresolved external symbol
-void renderTrees(Shader& shader, GLuint cubeVAO, GLuint cylinderVAO) {
-    // TODO: Implement tree rendering logic
-}
-
 GLuint createGround()
 {
     // Ground vertices (a large plane)
-    float vertices[] = {
+    static const float vertices[] = {
         // positions          // normals           // texture coords
         -1.0f, 0.0f, -1.0f,   0.0f,  1.0f, 0.0f,   0.0f, 0.0f,
          1.0f, 0.0f, -1.0f,   0.0f,  1.0f, 0.0f,   10.0f, 0.0f, // bump
@@ -1762,7 +1360,7 @@ GLuint createGround()
 GLuint createTriangularRoof()
 {
     // Triangular roof vertices (pitched roof)
-    float vertices[] = {
+    static const float vertices[] = {
         // Front triangle face
         -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
          0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
