@@ -1,6 +1,7 @@
 #include "SimpleGUI.h"
 #include "DeferredRenderer.h"
 #include "SceneNode.h"
+#include "Camera.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -9,6 +10,9 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 // Embedded 8x8 bitmap font (ASCII 0..127). Only printable 32..126 populated.
 static const unsigned char SIMPLEGUI_FONT[128][8] = {
@@ -175,14 +179,81 @@ void SimpleGUI::buildHierarchyPanel(){
     float startX = m_panelWidth + 30.f; float panelW = m_panelWidth; float y = 15.f; float panelH = 360.f; addRect(startX,5,panelW+10,panelH+40,0xAA101018); addText(startX+15,10,"Scene Hierarchy (Z expand / X collapse)",0xFFFFFFAA); y += 24.f; drawNodeRecursive(m_sceneRoot,0,y,startX,panelW); if(m_selectedNode){ char buf[128]; std::snprintf(buf,128,"Selected: %s", m_selectedNode->name.c_str()); addText(startX+15,panelH+18,buf,0xFFCCCCFF); }
 }
 
+// helper forward for world picking (AABB from node scale) - simplistic
+static bool intersectAABB(const glm::vec3& ro,const glm::vec3& rd,const glm::vec3& center,const glm::vec3& half,float& t){
+    glm::vec3 minB=center-half; glm::vec3 maxB=center+half; float tmin=0.f; float tmax=1e9f; for(int i=0;i<3;++i){ if(fabs(rd[i])<1e-6f){ if(ro[i]<minB[i]||ro[i]>maxB[i]) return false; } else { float ood=1.f/rd[i]; float t1=(minB[i]-ro[i])*ood; float t2=(maxB[i]-ro[i])*ood; if(t1>t2) std::swap(t1,t2); tmin = t1>tmin? t1 : tmin; tmax = t2<tmax? t2 : tmax; if(tmin>tmax) return false; } } t = tmin; return true; }
+
+bool SimpleGUI::mouseOverAnyGUI() const { // approximate by left panel + hierarchy + performance panels
+    if(!m_visible) return false; double mx=m_mouseX, my=m_mouseY; // panels vertical start near top
+    if(mx < m_panelWidth+20 && my < 520) return true; // main panel
+    if(mx > m_panelWidth+30 && mx < m_panelWidth*2+60 && my < 420) return true; // hierarchy
+    if(mx > m_panelWidth*2+100) return true; // perf/help
+    return false; }
+
+void SimpleGUI::handlePicking(){ if(!m_camera||!m_sceneRoot) return; if(mouseOverAnyGUI()) return; // ignore when over GUI
+    // left click press begins pick request
+    if(m_mousePressed){ m_requestPick=true; m_pickCandidate=nullptr; m_pickCandidateDist=1e9f; }
+    if(!m_requestPick) return;
+    int w,h; glfwGetWindowSize(m_window,&w,&h); float nx = (float)((m_mouseX / (double)w)*2.0 -1.0); float ny = (float)(1.0 - (m_mouseY / (double)h)*2.0); glm::mat4 proj = m_camera->GetProjectionMatrix((float)w/(float)h); glm::mat4 view = m_camera->GetViewMatrix(); glm::mat4 inv = glm::inverse(proj*view); glm::vec4 pNear = inv * glm::vec4(nx,ny,-1,1); pNear/=pNear.w; glm::vec4 pFar = inv * glm::vec4(nx,ny,1,1); pFar/=pFar.w; glm::vec3 ro = glm::vec3(pNear); glm::vec3 rd = glm::normalize(glm::vec3(pFar - pNear));
+    traversePick(m_sceneRoot,ro,rd);
+    if(!m_mouseDown && m_requestPick){ // release -> select
+        if(m_pickCandidate){ m_selectedNode = m_pickCandidate; // begin potential drag if shift held
+            int shift = glfwGetKey(m_window, GLFW_KEY_LEFT_SHIFT);
+            if(shift==GLFW_PRESS){ beginDrag(m_selectedNode, m_dragStartHit); }
+        }
+        m_requestPick=false; }
+    if(m_dragging){ updateDrag(ro,rd); if(!m_mouseDown) endDrag(); }
+}
+
+void SimpleGUI::traversePick(SceneNode* n,const glm::vec3& ro,const glm::vec3& rd){ if(!n) return; glm::mat4 wt = n->GetWorldTransform(); glm::vec3 pos = glm::vec3(wt[3]); glm::vec3 half = glm::vec3(glm::length(glm::vec3(wt[0]))*0.5f, glm::length(glm::vec3(wt[1]))*0.5f, glm::length(glm::vec3(wt[2]))*0.5f); if(half.x<0.2f) half = glm::max(half, glm::vec3(0.5f)); float t; if(intersectAABB(ro,rd,pos,half,t)){ if(t < m_pickCandidateDist){ m_pickCandidateDist=t; m_pickCandidate=n; m_dragStartHit = ro + rd * t; m_dragStartNodePos = pos; } }
+    for(auto &c : n->GetChildren()) traversePick(c.get(),ro,rd);
+}
+
+void SimpleGUI::beginDrag(SceneNode* n,const glm::vec3& worldHit){ if(!n) return; m_dragging=true; m_dragStartHit=worldHit; m_dragStartNodePos = glm::vec3(n->GetWorldTransform()[3]); }
+void SimpleGUI::updateDrag(const glm::vec3& ro,const glm::vec3& rd){ if(!m_dragging||!m_selectedNode) return; float planeY = m_dragStartHit.y; if(fabs(rd.y) < 1e-5f) return; float t = (planeY - ro.y)/rd.y; if(t<0) return; glm::vec3 hit = ro + rd * t; glm::vec3 delta = hit - m_dragStartHit; glm::vec3 newPos = m_dragStartNodePos + glm::vec3(delta.x,0,delta.z); glm::mat4 lt = m_selectedNode->GetLocalTransform(); SceneNode* parent = m_selectedNode->GetParent(); if(parent){ glm::mat4 parentW = parent->GetWorldTransform(); glm::mat4 parentInv = glm::inverse(parentW); glm::mat4 newWorld = glm::mat4(1); newWorld[3] = glm::vec4(newPos,1); lt = parentInv * newWorld; } else { lt[3] = glm::vec4(newPos,1); } m_selectedNode->SetLocalTransform(lt); }
+void SimpleGUI::endDrag(){ m_dragging=false; }
+
+void SimpleGUI::buildHelpPanel(){ float startX = m_panelWidth + 30.f + m_panelWidth + 40.f; float y = 200.f; float w = m_panelWidth + 40.f; float h = 240.f; addRect(startX, y, w+10.f, h, 0xAA101018); addText(startX+15,y+6,"Help / Shortcuts",0xFFFFFFAA); y+=24.f; auto line=[&](const char* t){ addText(startX+15,y,t,0xFFE0E0E0); y+=14.f; }; line("Mouse Left: pick node"); line("Shift+Click: pick & drag"); line("Drag: move on ground"); line("Z / X: expand/collapse tree"); line("F1: toggle GUI"); line("F6: toggle deferred"); line("M: cycle MSAA" ); line("B/N: bloom on/intensity"); line("J/K: HDR exposure +/-"); line("Arrow keys: (reserved)"); line("Esc: quit"); if(m_dragging) addText(startX+15,y+10,"[Dragging] release mouse to drop",0xFFFFAA55); }
+
 void SimpleGUI::buildPanels(float dt){
+    // existing body trimmed - we inject picking after panel build
     addRect(5,5,m_panelWidth+10,500,0xAA101018); m_cursorX=15; m_cursorY=15; m_timeAccum+=dt; ++m_frameCount; if(m_timeAccum>=0.5){ m_fps=(float)(m_frameCount/m_timeAccum); m_timeAccum=0; m_frameCount=0; } char s[64]; std::snprintf(s,64,"FPS: %.1f",m_fps); Label(s); bool prev=gUseDeferred; Toggle("Deferred Rendering", gUseDeferred); if(gUseDeferred && !prev){ GLint vp[4]; glGetIntegerv(GL_VIEWPORT,vp); gDeferred.Initialize(vp[2],vp[3]); }
     if(gUseDeferred){ float exp=gDeferred.GetExposure(); SliderFloat("HDR Exposure",exp,0.1f,5.f,0.05f); gDeferred.SetExposure(exp); bool bloom=gDeferred.IsBloomEnabled(); Toggle("Bloom",bloom); gDeferred.SetBloomEnabled(bloom); float bi=gDeferred.GetBloomIntensity(); SliderFloat("Bloom Intensity",bi,0.f,5.f,0.05f); gDeferred.SetBloomIntensity(bi); }
     SliderFloat("Time Of Day", timeOfDay,0.f,24.f,0.01f); Toggle("Directional Light", useDirectionalLight); int msaaVal=MSAA; if(msaaVal!=0&&msaaVal!=2&&msaaVal!=4&&msaaVal!=8) msaaVal=0; SliderInt("MSAA Samples", msaaVal,0,8); int allowed[4]={0,2,4,8}; int best=0; int diff=999; for(int a:allowed){ int d=std::abs(a-msaaVal); if(d<diff){ diff=d; best=a; }} if(best!=MSAA){ MSAA=best; if(MSAA==0) glDisable(GL_MULTISAMPLE); else glEnable(GL_MULTISAMPLE); if(gUseDeferred) gDeferred.SetMSAASamples(MSAA); }
     Label("F1: Toggle GUI"); Label("Hierarchy: select row"); Label("Z=open X=close");
     buildHierarchyPanel();
     buildPerformancePanel(dt);
+    buildHelpPanel();
+    handlePicking();
 }
 
-void SimpleGUI::flush(){ if(m_vertices.empty()) return; GLint vp[4]; glGetIntegerv(GL_VIEWPORT,vp); float L= (float)vp[0]; float T=(float)vp[1]; float W=(float)vp[2]; float H=(float)vp[3]; float R=L+W; float B=T+H; float proj[16]={ 2 /(R-L),0,0,0, 0,2/(T-B),0,0, 0,0,-1,0, (R+L)/(L-R),(T+B)/(B-T),0,1 }; GLboolean depthEnabled = glIsEnabled(GL_DEPTH_TEST); GLboolean cullEnabled = glIsEnabled(GL_CULL_FACE); GLboolean blendEnabled = glIsEnabled(GL_BLEND); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDisable(GL_CULL_FACE); glDisable(GL_DEPTH_TEST); glUseProgram(m_shader); glUniform1i(m_uTex,0); glUniformMatrix4fv(m_uProj,1,GL_FALSE,proj); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,m_fontTex); glBindVertexArray(m_VAO); glBindBuffer(GL_ARRAY_BUFFER,m_VBO); glBufferSubData(GL_ARRAY_BUFFER,0,m_vertices.size()*sizeof(Vertex),m_vertices.data()); glDrawArrays(GL_TRIANGLES,0,(GLsizei)m_vertices.size()); glBindVertexArray(0); if(!blendEnabled) glDisable(GL_BLEND); if(cullEnabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE); if(depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST); }
-void SimpleGUI::Draw(float dt){ if(!m_initialized||!m_visible) return; buildPanels(dt); flush(); }
+void SimpleGUI::flush(){
+    if(m_vertices.empty()) return;
+    GLint vp[4]; glGetIntegerv(GL_VIEWPORT,vp);
+    float L=(float)vp[0]; float T=(float)vp[1]; float W=(float)vp[2]; float H=(float)vp[3]; float R=L+W; float B=T+H;
+    // column-major orthographic projection
+    float proj[16]={ 2.f/(R-L),0,0,0, 0,2.f/(T-B),0,0, 0,0,-1,0, (R+L)/(L-R),(T+B)/(B-T),0,1 };
+    GLboolean depthEnabled = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean cullEnabled  = glIsEnabled(GL_CULL_FACE);
+    GLboolean blendEnabled = glIsEnabled(GL_BLEND);
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE); glDisable(GL_DEPTH_TEST);
+    glUseProgram(m_shader);
+    glUniform1i(m_uTex,0);
+    glUniformMatrix4fv(m_uProj,1,GL_FALSE,proj);
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,m_fontTex);
+    glBindVertexArray(m_VAO); glBindBuffer(GL_ARRAY_BUFFER,m_VBO);
+    glBufferSubData(GL_ARRAY_BUFFER,0,(GLsizeiptr)(m_vertices.size()*sizeof(Vertex)),m_vertices.data());
+    glDrawArrays(GL_TRIANGLES,0,(GLsizei)m_vertices.size());
+    glBindVertexArray(0);
+    // restore state
+    if(!blendEnabled) glDisable(GL_BLEND);
+    if(cullEnabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if(depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+}
+
+void SimpleGUI::Draw(float dt){
+    if(!m_initialized || !m_visible) return;
+    buildPanels(dt);
+    flush();
+}
