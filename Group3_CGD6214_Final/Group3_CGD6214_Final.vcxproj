@@ -130,6 +130,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="DeferredRenderer.cpp" />
     <ClCompile Include="LODManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Mesh.cpp" />
@@ -144,6 +145,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="DeferredRenderer.h" />
     <ClInclude Include="LODManager.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="Mesh.h" />
@@ -158,6 +160,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\basic.vert" />
+    <None Include="shaders\deferred_lighting.frag" />
+    <None Include="shaders\fullscreen_quad.vert" />
+    <None Include="shaders\gbuffer.frag" />
+    <None Include="shaders\gbuffer.vert" />
     <None Include="shaders\ground.frag" />
     <None Include="shaders\lighting.frag" />
     <None Include="shaders\normalmap.frag" />

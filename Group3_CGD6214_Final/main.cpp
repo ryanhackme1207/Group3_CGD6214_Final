@@ -22,6 +22,7 @@ using namespace glm;
 
 #include "Pedestrians.h"
 #include "Traffic.h" // pull in car structures and traffic functions
+#include "DeferredRenderer.h" // added for deferred rendering
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -35,6 +36,10 @@ bool useDirectionalLight = true;
 bool lightKeyPressed = false;
 int MSAA = 0;
 bool msaaKeyPressed = false;
+// Deferred rendering toggle
+static bool gUseDeferred = false;
+static bool gDeferredKeyPressed = false;
+static DeferredRenderer gDeferred;
 
 float timeOfDay = 12.0f;
 const float DAY_CYCLE_DURATION = 60.0f;
@@ -1111,48 +1116,103 @@ void main() {
         if (timeOfDay >= 24.0f) {
             timeOfDay = 0.0f;
         }
-
-        // Update cars
+        // update simulation (cars, pedestrians, camera)
         carSpawnTimer += deltaTime;
-        if (carSpawnTimer > 1.5f) {  // Spawn a car every 1.5 seconds for more traffic
-            spawnCar();
-            carSpawnTimer = 0.0f;
-        }
+        if (carSpawnTimer > 1.5f) { spawnCar(); carSpawnTimer = 0.0f; }
         updateCars(deltaTime);
-
-        // Update pedestrians
         updatePedestrians(deltaTime);
-
-        // Update camera
         camera.UpdateSmoothMovement(deltaTime);
         camera.UpdateOrbitalCamera(deltaTime);
         camera.UpdateTransition(deltaTime);
 
-        // Background color adjust
+        // Compute skyIntensity (shared for both forward & deferred paths)
         float skyIntensity;
         if (timeOfDay >= 6.0f && timeOfDay <= 18.0f) {
             float dayProgress = (timeOfDay - 6.0f) / 12.0f;
             skyIntensity = 0.6f + 0.2f * sin(dayProgress * M_PI);
-            glClearColor(0.6f * skyIntensity, 0.8f * skyIntensity, 1.0f * skyIntensity, 1.0f); // Sky blue background
-        }
-        else {
+            glClearColor(0.6f * skyIntensity, 0.8f * skyIntensity, 1.0f * skyIntensity, 1.0f);
+        } else {
             skyIntensity = 0.1f;
-            // Night: dark blue/black sky
             glClearColor(0.05f, 0.07f, 0.13f, 1.0f);
         }
 
-        // Render
+        if (gUseDeferred) {
+            // Ensure initialized (in case toggled before context established)
+            // (Already initialized on toggle; extra safety)
+            // Geometry pass
+            gDeferred.BeginGeometryPass();
+            Shader &geom = gDeferred.GetGeometryShader();
+            glm::mat4 projection = camera.GetProjectionMatrix((float)WIDTH / (float)HEIGHT);
+            glm::mat4 view = camera.GetViewMatrix();
+            geom.SetMat4("projection", projection);
+            geom.SetMat4("view", view);
+            // Draw opaque scene (subset sufficient to demonstrate MRT)
+            // Ground
+            geom.SetBool("isGround", true);
+            glm::mat4 modelM = glm::mat4(1.0f); modelM = glm::scale(modelM, glm::vec3(250.0f,1.0f,250.0f));
+            geom.SetMat4("model", modelM);
+            geom.SetVec3("objectColor", glm::vec3(0.4f,0.6f,0.3f));
+            glBindVertexArray(groundVAO);
+            glDrawElements(GL_TRIANGLES, getGroundIndexCount(), GL_UNSIGNED_INT, 0);
+            geom.SetBool("isGround", false);
+            // Buildings & trees (reuse existing helper)
+            drawCity(buildings, smallTrees, geom, cubeVAO, roofVAO, cylinderVAO);
+            // Iconic towers (simplified)
+            modelM = glm::mat4(1.0f);
+            modelM = glm::translate(modelM, glm::vec3(25.0f,210.5f,25.0f));
+            modelM = glm::scale(modelM, glm::vec3(3.0f,421.0f,3.0f));
+            geom.SetMat4("model", modelM);
+            geom.SetVec3("objectColor", glm::vec3(0.8f,0.8f,0.9f));
+            glBindVertexArray(cubeVAO); glDrawArrays(GL_TRIANGLES,0,36);
+            modelM = glm::mat4(1.0f);
+            modelM = glm::translate(modelM, glm::vec3(-30.0f,50.0f,-30.0f));
+            modelM = glm::scale(modelM, glm::vec3(12.0f,100.0f,12.0f));
+            geom.SetMat4("model", modelM);
+            geom.SetVec3("objectColor", glm::vec3(0.6f,0.5f,0.4f));
+            glDrawArrays(GL_TRIANGLES,0,36);
+            // Roads (simple large quads)
+            for (int x=-120; x<=120; x+=5){
+                modelM = glm::mat4(1.0f); modelM = glm::translate(modelM, glm::vec3(x,0.02f,0.0f));
+                modelM = glm::scale(modelM, glm::vec3(5.0f,0.04f,25.0f));
+                geom.SetMat4("model", modelM); geom.SetVec3("objectColor", glm::vec3(0.25f));
+                glBindVertexArray(cubeVAO); glDrawArrays(GL_TRIANGLES,0,36);
+            }
+            // Scene graph example hierarchy
+            sceneGraph.Draw(geom);
+            gDeferred.EndGeometryPass();
+
+            // Lighting pass
+            gDeferred.BeginLightingPass();
+            Shader &lightPass = gDeferred.GetLightingShader();
+            lightPass.SetVec3("viewPos", camera.GetPosition());
+            // Dynamic ambient based on time of day
+            glm::vec3 ambient = (timeOfDay>=6.0f && timeOfDay<=18.0f)? glm::vec3(0.25f) : glm::vec3(0.08f,0.08f,0.12f);
+            lightPass.SetVec3("ambientColor", ambient);
+            gDeferred.RenderQuad();
+            gDeferred.EndLightingPass();
+
+            // Skybox after lighting (depth already cleared in lighting pass so draw behind)
+            glDepthFunc(GL_LEQUAL);
+            glUseProgram(skyboxShader);
+            glm::mat4 skyboxView = glm::mat4(glm::mat3(view));
+            glUniformMatrix4fv(glGetUniformLocation(skyboxShader, "view"),1,GL_FALSE,glm::value_ptr(skyboxView));
+            glUniformMatrix4fv(glGetUniformLocation(skyboxShader, "projection"),1,GL_FALSE,glm::value_ptr(projection));
+            glUniform1f(glGetUniformLocation(skyboxShader, "timeOfDay"), timeOfDay);
+            glUniform1f(glGetUniformLocation(skyboxShader, "skyIntensity"), skyIntensity);
+            glBindVertexArray(skyboxVAO); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture); glDrawArrays(GL_TRIANGLES,0,36); glBindVertexArray(0); glDepthFunc(GL_LESS);
+
+            glfwSwapBuffers(window);
+            glfwPollEvents();
+            continue; // skip forward path this frame
+        }
+
+        // -------- Forward rendering path (existing) --------
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
         buildingShader.Use();
-
         buildingShader.SetFloat("bumpIntensity", 0.3f);
         buildingShader.SetFloat("time", (float)glfwGetTime());
-        // Ensure procedural geometry uses no texture unless explicitly bound by a Mesh draw
         buildingShader.SetBool("hasTexture", false);
         buildingShader.SetBool("useNormalMap", false);
-
-        // View/projection transformations using camera
         glm::mat4 projection = camera.GetProjectionMatrix((float)WIDTH / (float)HEIGHT);
         glm::mat4 view = camera.GetViewMatrix();
         buildingShader.SetMat4("projection", projection);
@@ -1918,7 +1978,7 @@ void main() {
             // water is confined to inner rect so it won't reach roads/buildings
             float waterWidth = glm::max(2.0f, outerSeaWidth - 2.0f * beachBand);
             float waterDepth = glm::max(2.0f, outerSeaDepth - 2.0f * beachBand);
-
+            
             // place beach slightly above water so water never floods surrounding geometry
             float sandHeight = 0.02f; // thin band
             float waterY = poolPos.y - 0.06f; // lower water a bit (avoid flooding building bases at y=0)
@@ -2052,6 +2112,9 @@ void main() {
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
+    if (gUseDeferred) {
+        gDeferred.Resize(width, height);
+    }
 }
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
@@ -2079,6 +2142,22 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 void processInput(GLFWwindow* window)
 {
     static Shader* currentShader = nullptr;
+    // Toggle deferred rendering (F6)
+    if (glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS && !gDeferredKeyPressed) {
+        gDeferredKeyPressed = true;
+        gUseDeferred = !gUseDeferred;
+        if (gUseDeferred) {
+            if (!gDeferred.Initialize(1920,1080)) {
+                std::cout << "Deferred renderer init failed, reverting to forward." << std::endl;
+                gUseDeferred = false;
+            } else {
+                std::cout << "Deferred Rendering: ON" << std::endl;
+            }
+        } else {
+            std::cout << "Deferred Rendering: OFF" << std::endl;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_F6) == GLFW_RELEASE) gDeferredKeyPressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);

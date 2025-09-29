@@ -57,6 +57,9 @@
     <ClCompile Include="SceneHelpers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DeferredRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">
@@ -95,6 +98,9 @@
     <ClInclude Include="main.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DeferredRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\basic.vert">
@@ -119,6 +125,18 @@
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\water.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\gbuffer.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\deferred_lighting.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\fullscreen_quad.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\gbuffer.frag">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>
