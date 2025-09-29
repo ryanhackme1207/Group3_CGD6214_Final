@@ -33,6 +33,9 @@ public:
     // Activate the shader
     void Use() const;
 
+    // Accessor to retrieve shader program ID
+    unsigned int GetProgramID() const { return ID; }
+
     // Utility uniform functions
     void SetBool(const std::string& name, bool value);
     void SetInt(const std::string& name, int value);
