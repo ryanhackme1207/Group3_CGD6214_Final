@@ -23,6 +23,7 @@ using namespace glm;
 #include "Pedestrians.h"
 #include "Traffic.h" // pull in car structures and traffic functions
 #include "DeferredRenderer.h" // added for deferred rendering
+#include "SimpleGUI.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -37,9 +38,9 @@ bool lightKeyPressed = false;
 int MSAA = 0;
 bool msaaKeyPressed = false;
 // Deferred rendering toggle
-static bool gUseDeferred = false;
-static bool gDeferredKeyPressed = false;
-static DeferredRenderer gDeferred;
+bool gUseDeferred = false; // removed static for GUI access
+bool gDeferredKeyPressed = false; // removed static
+DeferredRenderer gDeferred; // removed static
 
 float timeOfDay = 12.0f;
 const float DAY_CYCLE_DURATION = 60.0f;
@@ -1099,12 +1100,17 @@ void main() {
         glEnable(GL_MULTISAMPLE);
     }
 
+    // Initialize GUI after GL context + glew
+    SimpleGUI::Instance().Initialize(window);
+
     // Render loop
     glm::mat4 model;
     // Ensure buildings are generated only once to avoid sizes/positions changing while moving the camera
     bool buildingsGenerated = false;
     while (!glfwWindowShouldClose(window))
     {
+        // Start GUI frame early so widgets affect this frame's rendering
+        SimpleGUI::Instance().BeginFrame();
         // Per-frame time logic
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
@@ -1204,11 +1210,12 @@ void main() {
             glUniform1f(glGetUniformLocation(skyboxShader, "skyIntensity"), skyIntensity);
             glBindVertexArray(skyboxVAO); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture); glDrawArrays(GL_TRIANGLES,0,36); glBindVertexArray(0); glDepthFunc(GL_LESS);
 
+            // Render GUI last
+            SimpleGUI::Instance().Draw(deltaTime);
             glfwSwapBuffers(window);
             glfwPollEvents();
-            continue; // skip forward path this frame
+            continue;
         }
-
         // -------- Forward rendering path (existing) --------
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         buildingShader.Use();
@@ -2098,6 +2105,8 @@ void main() {
         glBindVertexArray(0);
         glDepthFunc(GL_LESS);
 
+        // Render GUI last
+        SimpleGUI::Instance().Draw(deltaTime);
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -2301,6 +2310,9 @@ void processInput(GLFWwindow* window)
             gDeferred.SetExposure(std::max(0.1f, exposure - exposureChangeRate * deltaTime));
         }
     }
+
+    // Toggle GUI visibility F1
+    static bool f1Pressed=false; if(glfwGetKey(window,GLFW_KEY_F1)==GLFW_PRESS){ if(!f1Pressed){ f1Pressed=true; SimpleGUI::Instance().ToggleVisible(); }} else if(glfwGetKey(window,GLFW_KEY_F1)==GLFW_RELEASE){ f1Pressed=false; }
 }
 
 GLuint createCube()

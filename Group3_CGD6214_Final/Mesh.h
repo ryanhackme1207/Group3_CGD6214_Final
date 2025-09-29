@@ -15,6 +15,13 @@ public:
     Mesh(const std::vector<float>& vertices, const std::vector<unsigned int>& indices, const std::string& texturePath);
     ~Mesh();
 
+    // Disable copy to avoid double deletion / dangling GL handles
+    Mesh(const Mesh&) = delete;
+    Mesh& operator=(const Mesh&) = delete;
+    // Enable move semantics
+    Mesh(Mesh&& other) noexcept;
+    Mesh& operator=(Mesh&& other) noexcept;
+
     void Draw(Shader& shader, const glm::mat4& modelMatrix);
 
     // Set or replace texture after creation

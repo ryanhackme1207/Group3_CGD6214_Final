@@ -9,8 +9,26 @@
 
 #include "stb_image.h"
 
-// single default constructor, initialize map IDs too
 Mesh::Mesh() : VAO(0), VBO(0), EBO(0), indexCount(0), textureID(0), normalMapID(0), specularMapID(0), emissionMapID(0) {}
+
+Mesh::Mesh(Mesh&& other) noexcept : VAO(other.VAO), VBO(other.VBO), EBO(other.EBO), indexCount(other.indexCount), textureID(other.textureID), normalMapID(other.normalMapID), specularMapID(other.specularMapID), emissionMapID(other.emissionMapID), cpuVertices(std::move(other.cpuVertices)), cpuIndices(std::move(other.cpuIndices)) {
+    other.VAO = other.VBO = other.EBO = 0; other.textureID=other.normalMapID=other.specularMapID=other.emissionMapID=0; other.indexCount=0;
+}
+
+Mesh& Mesh::operator=(Mesh&& other) noexcept {
+    if(this!=&other){
+        if (emissionMapID) glDeleteTextures(1, &emissionMapID);
+        if (specularMapID) glDeleteTextures(1, &specularMapID);
+        if (normalMapID) glDeleteTextures(1, &normalMapID);
+        if (textureID) glDeleteTextures(1, &textureID);
+        if (EBO) glDeleteBuffers(1, &EBO);
+        if (VBO) glDeleteBuffers(1, &VBO);
+        if (VAO) glDeleteVertexArrays(1, &VAO);
+        VAO=other.VAO; VBO=other.VBO; EBO=other.EBO; indexCount=other.indexCount; textureID=other.textureID; normalMapID=other.normalMapID; specularMapID=other.specularMapID; emissionMapID=other.emissionMapID; cpuVertices=std::move(other.cpuVertices); cpuIndices=std::move(other.cpuIndices);
+        other.VAO=other.VBO=other.EBO=0; other.textureID=other.normalMapID=other.specularMapID=other.emissionMapID=0; other.indexCount=0;
+    }
+    return *this;
+}
 
 static Mesh::Vertex ConvertFromFlat(const float* base) {
     Mesh::Vertex v;
