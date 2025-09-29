@@ -54,17 +54,29 @@ public:
     void SetBloomIntensity(float v) { bloomIntensity = v; }
     float GetBloomIntensity() const { return bloomIntensity; }
 
+    // MSAA controls (for deferred path). samples=0 disables.
+    void SetMSAASamples(int samples);
+    int  GetMSAASamples() const { return msaaSamples; }
+
 private:
     // Screen dimensions
     int screenWidth, screenHeight;
-    
-    // G-Buffer framebuffer and textures
-    GLuint gBuffer;
-    GLuint gPosition;    // RGB: world position, A: unused
-    GLuint gNormal;      // RGB: world normal, A: unused  
-    GLuint gAlbedoSpec;  // RGB: albedo (diffuse color), A: specular intensity
-    GLuint gDepth;       // Depth buffer
-    
+
+    // Single-sample G-buffer (used for lighting pass sampling)
+    GLuint gBuffer; 
+    GLuint gPosition; 
+    GLuint gNormal; 
+    GLuint gAlbedoSpec; 
+    GLuint gDepth;
+
+    // Multi-sample G-buffer (write target when msaaSamples>0) - resolved into single-sample above
+    GLuint gBufferMS; 
+    GLuint gPositionMS; 
+    GLuint gNormalMS; 
+    GLuint gAlbedoSpecMS; 
+    GLuint gDepthMS; 
+    int msaaSamples;
+
     // HDR framebuffer objects
     GLuint hdrFBO;
     GLuint hdrColorBuffer;
@@ -92,6 +104,9 @@ private:
     
     // Initialize G-Buffer textures and framebuffer
     bool InitializeGBuffer();
+    
+    // Initialize MSAA G-Buffer
+    bool InitializeMSAAGBuffer();
     
     // Initialize HDR framebuffer
     bool InitializeHDRBuffer();

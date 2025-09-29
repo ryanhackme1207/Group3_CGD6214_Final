@@ -1472,6 +1472,8 @@ void main() {
         buildingShader.SetBool("isGround", true);
         buildingShader.SetFloat("groundBumpIntensity", 0.4f);
         buildingShader.SetFloat("time", (float)glfwGetTime());
+        buildingShader.SetMat4("projection", projection);
+        buildingShader.SetMat4("view", view);
 
         model = glm::mat4(1.0f);
         model = glm::scale(model, glm::vec3(250.0f, 1.0f, 250.0f));
@@ -1986,25 +1988,38 @@ void main() {
             buildingShader.Use();
             buildingShader.SetMat4("projection", projection);
             buildingShader.SetMat4("view", view);
-
-            glm::vec3 drySand = glm::vec3(0.94f, 0.85f, 0.62f);
+            buildingShader.SetFloat("time", (float)glfwGetTime());
+            buildingShader.SetVec3("viewPos", camera.GetPosition());
+            buildingShader.SetVec3("baseColor", glm::vec3(0.02f, 0.18f, 0.28f));
+            // pass sun direction and color for specular
+            // (original variable names changed to avoid redefinition conflicts elsewhere)
+            // glm::vec3 sunDir = ... (removed duplicate)
+            // float sunIntensity = ... (removed duplicate)
+            // glm::vec3 sunColor = ... (removed duplicate)
+            glm::vec3 waterSunDir = glm::normalize(glm::vec3(cos((timeOfDay/24.0f)*2.0f*M_PI), sin((timeOfDay/24.0f)*2.0f*M_PI), 0.0f));
+            float waterSunIntensity = (timeOfDay >= 6.0f && timeOfDay <= 18.0f) ? 1.0f : 0.2f;
+            glm::vec3 waterSunColor = glm::vec3(1.0f, 0.95f, 0.9f) * waterSunIntensity;
+            waterShader.SetVec3("sunDir", waterSunDir);
+            waterShader.SetVec3("sunColor", waterSunColor);
 
             // Draw single continuous beach band on four sides (a frame) - flat horizontal line until end
             auto drawBeachX = [&](float centerZ, float sizeX, float sizeZ){
+                glm::vec3 beachColor = glm::vec3(0.94f, 0.85f, 0.62f); // sand color inline to avoid scope issues
                 glm::mat4 bm = glm::mat4(1.0f);
                 bm = glm::translate(bm, glm::vec3(poolPos.x, waterY + sandHeight * 0.5f, poolPos.z + centerZ));
                 bm = glm::scale(bm, glm::vec3(sizeX, sandHeight, sizeZ));
                 buildingShader.SetMat4("model", bm);
-                buildingShader.SetVec3("objectColor", drySand);
+                buildingShader.SetVec3("objectColor", beachColor);
                 glBindVertexArray(cubeVAO);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
             };
             auto drawBeachZ = [&](float centerX, float sizeX, float sizeZ){
+                glm::vec3 beachColor = glm::vec3(0.94f, 0.85f, 0.62f);
                 glm::mat4 bm = glm::mat4(1.0f);
                 bm = glm::translate(bm, glm::vec3(poolPos.x + centerX, waterY + sandHeight * 0.5f, poolPos.z));
                 bm = glm::scale(bm, glm::vec3(sizeX, sandHeight, sizeZ));
                 buildingShader.SetMat4("model", bm);
-                buildingShader.SetVec3("objectColor", drySand);
+                buildingShader.SetVec3("objectColor", beachColor);
                 glBindVertexArray(cubeVAO);
                 glDrawArrays(GL_TRIANGLES, 0, 36);
             };
@@ -2252,12 +2267,17 @@ void processInput(GLFWwindow* window)
         if (MSAA > 0) {
             MSAA = 0;
             glDisable(GL_MULTISAMPLE);
+            if(gUseDeferred){ gDeferred.SetMSAASamples(0); }
             std::cout << "MSAA: OFF" << std::endl;
         }
         else {
-            MSAA = 4;
+            // cycle common sample counts 4 -> 8 -> 2 -> 4 ... (example)
+            static int cycle = 0; int samplesCycle[3] = {4,8,2};
+            int chosen = samplesCycle[cycle]; cycle = (cycle+1)%3;
+            MSAA = chosen;
             glEnable(GL_MULTISAMPLE);
-            std::cout << "MSAA: ON (4x)" << std::endl;
+            if(gUseDeferred){ gDeferred.SetMSAASamples(chosen); }
+            std::cout << "MSAA: ON (" << chosen << "x)" << std::endl;
         }
     }
     if (glfwGetKey(window, GLFW_KEY_M) == GLFW_RELEASE) {
@@ -2325,11 +2345,11 @@ GLuint createCube()
          0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
          0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
         -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
-        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,   0.0f,  0.0f, 1.0f,
 
-        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f,
          0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+          0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
          0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
         -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f,
         -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f
