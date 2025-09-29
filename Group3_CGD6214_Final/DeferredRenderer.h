@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <memory>
+#include <vector>
 #include "Shader.h"
 
 class DeferredRenderer {
@@ -58,6 +59,14 @@ public:
     void SetMSAASamples(int samples);
     int  GetMSAASamples() const { return msaaSamples; }
 
+    // SSAO controls
+    void SetSSAOEnabled(bool v){ ssaoEnabled = v; }
+    bool IsSSAOEnabled() const { return ssaoEnabled; }
+    void SetSSAORadius(float r){ ssaoRadius = r; }
+    float GetSSAORadius() const { return ssaoRadius; }
+    void SetSSAOBias(float b){ ssaoBias = b; }
+    float GetSSAOBias() const { return ssaoBias; }
+
 private:
     // Screen dimensions
     int screenWidth, screenHeight;
@@ -102,6 +111,17 @@ private:
     std::unique_ptr<Shader> bloomExtractShader; // bright pass
     std::unique_ptr<Shader> bloomBlurShader;    // gaussian blur
     
+    // SSAO resources
+    bool ssaoEnabled = true;
+    float ssaoRadius = 0.9f;
+    float ssaoBias = 0.025f;
+    GLuint ssaoFBO = 0, ssaoColorBuffer = 0;
+    GLuint ssaoBlurFBO = 0, ssaoColorBufferBlur = 0;
+    GLuint noiseTexture = 0;
+    std::unique_ptr<Shader> ssaoShader; 
+    std::unique_ptr<Shader> ssaoBlurShader; 
+    std::vector<glm::vec3> ssaoKernel; 
+
     // Initialize G-Buffer textures and framebuffer
     bool InitializeGBuffer();
     
@@ -119,4 +139,10 @@ private:
     
     // Initialize shaders
     bool InitializeShaders();
+
+    // Initialize SSAO resources
+    bool InitializeSSAO();
+    
+    // Compute SSAO using compute shader
+    void ComputeSSAO();
 };
