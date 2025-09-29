@@ -1,5 +1,6 @@
 #include "SimpleGUI.h"
 #include "DeferredRenderer.h"
+#include "SceneNode.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -7,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 // Embedded 8x8 bitmap font (ASCII 0..127). Only printable 32..126 populated.
 static const unsigned char SIMPLEGUI_FONT[128][8] = {
@@ -45,7 +47,7 @@ static const unsigned char SIMPLEGUI_FONT[128][8] = {
 {38,45,24,0,0,0,0,0}, {0,0,0,0,0,0,0,0}
 };
 
-// Externals from main.cpp we will control
+// Forward declarations of existing externs
 extern float timeOfDay;            // 0..24 hour cycle
 extern bool useDirectionalLight;   // lighting toggle
 extern int   MSAA;                 // msaa samples (0,2,4,8)
@@ -71,7 +73,71 @@ void SimpleGUI::buildFont(){
 
 void SimpleGUI::Initialize(GLFWwindow* w){ if(m_initialized) return; m_window=w; buildShaders(); buildFont(); m_initialized=true; }
 
-void SimpleGUI::BeginFrame(){ if(!m_initialized) return; glfwGetCursorPos(m_window,&m_mouseX,&m_mouseY); int st=glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT); m_mousePressed=(st==GLFW_PRESS && !m_mouseDown); m_mouseDown=(st==GLFW_PRESS); m_vertices.clear(); }
+void SimpleGUI::BeginFrame(){
+    if(!m_initialized) return;
+    glfwGetCursorPos(m_window,&m_mouseX,&m_mouseY);
+    int st=glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT);
+    m_mousePressed=(st==GLFW_PRESS && !m_mouseDown);
+    m_mouseDown=(st==GLFW_PRESS);
+    m_vertices.clear();
+    // per-frame key edge detection for Z/X
+    int zState = glfwGetKey(m_window, GLFW_KEY_Z);
+    int xState = glfwGetKey(m_window, GLFW_KEY_X);
+    m_zPressedFrame = (zState==GLFW_PRESS && !m_prevZ);
+    m_xPressedFrame = (xState==GLFW_PRESS && !m_prevX);
+    m_prevZ = (zState==GLFW_PRESS);
+    m_prevX = (xState==GLFW_PRESS);
+}
+
+void SimpleGUI::recordFrameTime(float dt){
+    float ms = dt * 1000.0f;
+    m_frameTimes[m_frameIndex++] = ms;
+    if(m_frameIndex >= FRAME_HISTORY){ m_frameIndex = 0; m_historyFilled = true; }
+    int count = m_historyFilled ? FRAME_HISTORY : m_frameIndex;
+    if(count==0) return;
+    m_minFrameMs = m_frameTimes[0]; m_maxFrameMs = m_frameTimes[0]; double sum=0.0;
+    for(int i=0;i<count;++i){ float v=m_frameTimes[i]; if(v<m_minFrameMs) m_minFrameMs=v; if(v>m_maxFrameMs) m_maxFrameMs=v; sum+=v; }
+    m_avgFrameMs = (float)(sum / count);
+}
+
+void SimpleGUI::buildPerformancePanel(float deltaTime){
+    recordFrameTime(deltaTime);
+    float startX = m_panelWidth + 30.f + m_panelWidth + 40.f; // third panel to the right
+    float panelW = m_panelWidth + 40.f;
+    float panelH = 180.f;
+    addRect(startX,5,panelW+10,panelH+140,0xAA101018);
+    addText(startX+15,10,"Performance",0xFFFFFFAA);
+    char line[128];
+    std::snprintf(line,128,"Avg: %.2f ms (%.0f FPS)", m_avgFrameMs, (m_avgFrameMs>0? 1000.0f/m_avgFrameMs:0.f));
+    addText(startX+15,30,line,0xFFE0E0E0);
+    std::snprintf(line,128,"Min: %.2f ms  Max: %.2f ms", m_minFrameMs, m_maxFrameMs);
+    addText(startX+15,46,line,0xFFB0B0B0);
+    // Graph area
+    float graphX = startX + 15.f;
+    float graphY = 66.f;
+    float graphW = panelW - 30.f;
+    float graphH = 90.f;
+    addRect(graphX,graphY,graphW,graphH,0xFF1A1A30);
+    int count = m_historyFilled ? FRAME_HISTORY : m_frameIndex;
+    if(count>1){
+        float maxV = m_maxFrameMs; if(maxV < 16.f) maxV = 16.f; // ensure visible
+        float barW = graphW / (float)FRAME_HISTORY;
+        for(int i=0;i<count;++i){ int idx = (m_historyFilled? (m_frameIndex + i) % FRAME_HISTORY : i); float v = m_frameTimes[idx]; float norm = v / maxV; if(norm>1.f) norm=1.f; float h = norm * (graphH-4.f); float bx = graphX + i * barW; float by = graphY + graphH - 2.f - h; uint32_t col = (v > 33.0f)?0xFFAA3333: (v>22.f?0xFFAA8833:0xFF33AA55); addRect(bx,by,barW-1.f,h,col);
+        }
+        // reference lines (16.6ms ~60fps, 33.3ms ~30fps)
+        float ref60Y = graphY + graphH - 2.f - (16.6f / maxV) * (graphH-4.f);
+        float ref30Y = graphY + graphH - 2.f - (33.3f / maxV) * (graphH-4.f);
+        addRect(graphX,ref60Y,graphW,1.f,0x40FFFFFF);
+        addRect(graphX,ref30Y,graphW,1.f,0x40FFAA66);
+        addText(graphX+graphW-50.f,ref60Y-8.f,"60fps",0x80FFFFFF);
+        addText(graphX+graphW-50.f,ref30Y-8.f,"30fps",0x80FFCC99);
+    }
+    // instructions
+    addText(startX+15,graphY+graphH+8.f,"Bars show last ~2s frame times",0xFF9999CC);
+}
+
+// remove duplicate BeginFrame earlier if present and implement unified version with performance capture
+// void SimpleGUI::BeginFrame(){ if(!m_initialized) return; glfwGetCursorPos(m_window,&m_mouseX,&m_mouseY); int st=glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT); m_mousePressed=(st==GLFW_PRESS && !m_mouseDown); m_mouseDown=(st==GLFW_PRESS); m_vertices.clear(); }
 
 bool SimpleGUI::regionHit(float x,float y,float w,float h) const { return m_mouseX>=x && m_mouseX<=x+w && m_mouseY>=y && m_mouseY<=y+h; }
 
@@ -90,33 +156,33 @@ bool SimpleGUI::SliderFloat(const std::string& label,float& value,float minV,flo
 
 bool SimpleGUI::SliderInt(const std::string& label,int& value,int minV,int maxV){ float f=(float)value; bool ch=SliderFloat(label,f,(float)minV,(float)maxV,1.f); int nv=(int)roundf(f); if(nv!=value){ value=nv; ch=true;} return ch; }
 
-void SimpleGUI::buildPanels(float dt){ addRect(5,5,m_panelWidth+10,440,0xAA101018); m_cursorX=15; m_cursorY=15; m_timeAccum+=dt; ++m_frameCount; if(m_timeAccum>=0.5){ m_fps=(float)(m_frameCount/m_timeAccum); m_timeAccum=0; m_frameCount=0; } char s[64]; std::snprintf(s,64,"FPS: %.1f",m_fps); Label(s); bool prev=gUseDeferred; Toggle("Deferred Rendering", gUseDeferred); if(gUseDeferred && !prev){ GLint vp[4]; glGetIntegerv(GL_VIEWPORT,vp); gDeferred.Initialize(vp[2],vp[3]); }
-    if(gUseDeferred){ float exp=gDeferred.GetExposure(); SliderFloat("HDR Exposure",exp,0.1f,5.f,0.05f); gDeferred.SetExposure(exp); bool bloom=gDeferred.IsBloomEnabled(); Toggle("Bloom",bloom); gDeferred.SetBloomEnabled(bloom); float bi=gDeferred.GetBloomIntensity(); SliderFloat("Bloom Intensity",bi,0.f,5.f,0.05f); gDeferred.SetBloomIntensity(bi); }
-    SliderFloat("Time Of Day", timeOfDay,0.f,24.f,0.01f); Toggle("Directional Light", useDirectionalLight); int msaaVal=MSAA; if(msaaVal!=0&&msaaVal!=2&&msaaVal!=4&&msaaVal!=8) msaaVal=0; SliderInt("MSAA Samples", msaaVal,0,8); int allowed[4]={0,2,4,8}; int best=0; int diff=999; for(int a:allowed){ int d=std::abs(a-msaaVal); if(d<diff){ diff=d; best=a; }} if(best!=MSAA){ MSAA=best; if(MSAA==0) glDisable(GL_MULTISAMPLE); else glEnable(GL_MULTISAMPLE); if(gUseDeferred) gDeferred.SetMSAASamples(MSAA); }
-    Label("F1: Toggle GUI"); }
+void SimpleGUI::openAll(SceneNode* n){ if(!n) return; m_openState[n]=true; for(auto &c: n->GetChildren()) openAll(c.get()); }
+void SimpleGUI::closeAll(SceneNode* n){ if(!n) return; m_openState[n]=false; for(auto &c: n->GetChildren()) closeAll(c.get()); }
 
-void SimpleGUI::flush(){
-    if(m_vertices.empty()) return;
-    // Save prior states we modify
-    GLboolean depthEnabled = glIsEnabled(GL_DEPTH_TEST);
-    GLboolean cullEnabled  = glIsEnabled(GL_CULL_FACE);
-    GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-
-    // Determine viewport for projection
-    GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp); float L=(float)vp[0]; float T=(float)vp[1]; float W=(float)vp[2]; float H=(float)vp[3];
-    float R=L+W; float B=T+H;
-    float proj[16] = { 2/(R-L),0,0,0, 0,2/(T-B),0,0, 0,0,-1,0, (R+L)/(L-R),(T+B)/(B-T),0,1 };
-    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDisable(GL_CULL_FACE); glDisable(GL_DEPTH_TEST);
-    glUseProgram(m_shader); glUniform1i(m_uTex,0); glUniformMatrix4fv(m_uProj,1,GL_FALSE,proj);
-    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,m_fontTex);
-    glBindVertexArray(m_VAO); glBindBuffer(GL_ARRAY_BUFFER,m_VBO);
-    glBufferSubData(GL_ARRAY_BUFFER,0,m_vertices.size()*sizeof(Vertex), m_vertices.data());
-    glDrawArrays(GL_TRIANGLES,0,(GLsizei)m_vertices.size());
-    glBindVertexArray(0);
-    // Restore states
-    if(!blendEnabled) glDisable(GL_BLEND); // if it was previously disabled
-    if(cullEnabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-    if(depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+void SimpleGUI::drawNodeRecursive(SceneNode* node,int depth,float& y,float panelX,float panelW){
+    if(!node) return; float lineH=16.f; float rowY=y; float rowHeight=lineH; float xLabel=panelX+10.f+depth*14.f; bool hasChildren=!node->GetChildren().empty(); bool open=m_openState[node]; bool hovered=regionHit(panelX+8.f,rowY,panelW-16.f,rowHeight);
+    uint32_t col = (m_selectedNode==node?0xFF5560AA: hovered?0xFF3A3A80:0xFF2A2A60); addRect(panelX+8.f,rowY,panelW-16.f,rowHeight,col);
+    if(hasChildren){ uint32_t ic = open?0xFF88FF88:0xFFFF8888; addRect(panelX+12.f+depth*14.f,rowY+5.f,8.f,8.f,ic); }
+    addText(xLabel + (hasChildren?14.f:0.f), rowY+4.f, node->name.empty()?"(unnamed)":node->name.c_str());
+    if(hovered && m_mousePressed) m_selectedNode=node;
+    // Use per-frame key edges; apply when row hovered or selected
+    if((hovered || m_selectedNode==node) && hasChildren){ if(m_zPressedFrame){ m_openState[node]=true; open=true; } if(m_xPressedFrame){ m_openState[node]=false; open=false; } }
+    y += rowHeight + 2.f; if(open){ for(auto &c : node->GetChildren()) drawNodeRecursive(c.get(), depth+1,y,panelX,panelW); }
 }
 
+void SimpleGUI::buildHierarchyPanel(){
+    if(!m_sceneRoot) return; if(!m_autoExpandedOnce){ openAll(m_sceneRoot); m_autoExpandedOnce=true; }
+    float startX = m_panelWidth + 30.f; float panelW = m_panelWidth; float y = 15.f; float panelH = 360.f; addRect(startX,5,panelW+10,panelH+40,0xAA101018); addText(startX+15,10,"Scene Hierarchy (Z expand / X collapse)",0xFFFFFFAA); y += 24.f; drawNodeRecursive(m_sceneRoot,0,y,startX,panelW); if(m_selectedNode){ char buf[128]; std::snprintf(buf,128,"Selected: %s", m_selectedNode->name.c_str()); addText(startX+15,panelH+18,buf,0xFFCCCCFF); }
+}
+
+void SimpleGUI::buildPanels(float dt){
+    addRect(5,5,m_panelWidth+10,500,0xAA101018); m_cursorX=15; m_cursorY=15; m_timeAccum+=dt; ++m_frameCount; if(m_timeAccum>=0.5){ m_fps=(float)(m_frameCount/m_timeAccum); m_timeAccum=0; m_frameCount=0; } char s[64]; std::snprintf(s,64,"FPS: %.1f",m_fps); Label(s); bool prev=gUseDeferred; Toggle("Deferred Rendering", gUseDeferred); if(gUseDeferred && !prev){ GLint vp[4]; glGetIntegerv(GL_VIEWPORT,vp); gDeferred.Initialize(vp[2],vp[3]); }
+    if(gUseDeferred){ float exp=gDeferred.GetExposure(); SliderFloat("HDR Exposure",exp,0.1f,5.f,0.05f); gDeferred.SetExposure(exp); bool bloom=gDeferred.IsBloomEnabled(); Toggle("Bloom",bloom); gDeferred.SetBloomEnabled(bloom); float bi=gDeferred.GetBloomIntensity(); SliderFloat("Bloom Intensity",bi,0.f,5.f,0.05f); gDeferred.SetBloomIntensity(bi); }
+    SliderFloat("Time Of Day", timeOfDay,0.f,24.f,0.01f); Toggle("Directional Light", useDirectionalLight); int msaaVal=MSAA; if(msaaVal!=0&&msaaVal!=2&&msaaVal!=4&&msaaVal!=8) msaaVal=0; SliderInt("MSAA Samples", msaaVal,0,8); int allowed[4]={0,2,4,8}; int best=0; int diff=999; for(int a:allowed){ int d=std::abs(a-msaaVal); if(d<diff){ diff=d; best=a; }} if(best!=MSAA){ MSAA=best; if(MSAA==0) glDisable(GL_MULTISAMPLE); else glEnable(GL_MULTISAMPLE); if(gUseDeferred) gDeferred.SetMSAASamples(MSAA); }
+    Label("F1: Toggle GUI"); Label("Hierarchy: select row"); Label("Z=open X=close");
+    buildHierarchyPanel();
+    buildPerformancePanel(dt);
+}
+
+void SimpleGUI::flush(){ if(m_vertices.empty()) return; GLint vp[4]; glGetIntegerv(GL_VIEWPORT,vp); float L= (float)vp[0]; float T=(float)vp[1]; float W=(float)vp[2]; float H=(float)vp[3]; float R=L+W; float B=T+H; float proj[16]={ 2 /(R-L),0,0,0, 0,2/(T-B),0,0, 0,0,-1,0, (R+L)/(L-R),(T+B)/(B-T),0,1 }; GLboolean depthEnabled = glIsEnabled(GL_DEPTH_TEST); GLboolean cullEnabled = glIsEnabled(GL_CULL_FACE); GLboolean blendEnabled = glIsEnabled(GL_BLEND); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); glDisable(GL_CULL_FACE); glDisable(GL_DEPTH_TEST); glUseProgram(m_shader); glUniform1i(m_uTex,0); glUniformMatrix4fv(m_uProj,1,GL_FALSE,proj); glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,m_fontTex); glBindVertexArray(m_VAO); glBindBuffer(GL_ARRAY_BUFFER,m_VBO); glBufferSubData(GL_ARRAY_BUFFER,0,m_vertices.size()*sizeof(Vertex),m_vertices.data()); glDrawArrays(GL_TRIANGLES,0,(GLsizei)m_vertices.size()); glBindVertexArray(0); if(!blendEnabled) glDisable(GL_BLEND); if(cullEnabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE); if(depthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST); }
 void SimpleGUI::Draw(float dt){ if(!m_initialized||!m_visible) return; buildPanels(dt); flush(); }

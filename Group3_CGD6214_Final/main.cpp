@@ -953,9 +953,10 @@ void main() {
     }
 
     // Build a small scene graph to provide a multi-level hierarchical model
-    // Root -> District -> Block -> House -> Roof -> Window (>=4 levels)
     SceneGraph sceneGraph;
     auto rootNode = sceneGraph.GetRoot();
+    // Register root with GUI for hierarchy browser
+    SimpleGUI::Instance().SetSceneRoot(rootNode.get());
 
     // Create simple reusable cube mesh for scene graph nodes
     auto cubeMesh = std::make_shared<Mesh>(Mesh::CreateCube());
@@ -1229,8 +1230,7 @@ void main() {
         buildingShader.SetMat4("view", view);
 
         // Draw scene graph hierarchical models
-        // This renders the small hierarchy: District->Block->House->Roof->Window
-        sceneGraph.Draw(buildingShader);
+        // This renders the small hierarchy: District->Block->House->Roof->Window        sceneGraph.Draw(buildingShader);
 
         // Set lighting uniforms (sun-like lighting)
         // Predeclare light containers so we can use them for a second additive pass (glow)
