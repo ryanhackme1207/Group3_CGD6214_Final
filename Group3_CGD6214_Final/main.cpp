@@ -620,6 +620,8 @@ int main()
         std::cout << "in your project directory" << std::endl;
         return -1;
     }
+    // NEW: print the shader source file paths just loaded
+    buildingShader.PrintSourceFilePaths();
 
     // VAO / VBO (skybox)
     unsigned int skyboxVAO, skyboxVBO;
@@ -1658,8 +1660,7 @@ void main() {
         renderRoadInfrastructure(buildingShader, cubeVAO, glfwGetTime());
 
         // === RENDER TREES ===
-        // moved tree generation and rendering after buildings so we can avoid placing trees inside buildings
-        // renderTrees(buildingShader, cubeVAO, cylinderVAO); // removed
+
 
         // === RENDER REALISTIC MOVING CARS ===
         // Spatial partitioning: build quadtrees for moving cars and pedestrians and query items near camera
@@ -1985,26 +1986,21 @@ void main() {
             float sandHeight = 0.02f; // thin band
             float waterY = poolPos.y - 0.06f; // lower water a bit (avoid flooding building bases at y=0)
 
+            // Compute sun lighting for water/beach once
+            glm::vec3 sunDir = glm::normalize(glm::vec3(cos((timeOfDay/24.0f)*2.0f*M_PI), sin((timeOfDay/24.0f)*2.0f*M_PI), 0.0f));
+            float sunIntensity = (timeOfDay >= 6.0f && timeOfDay <= 18.0f) ? 1.0f : 0.2f;
+            glm::vec3 sunColor = glm::vec3(1.0f, 0.95f, 0.9f) * sunIntensity;
+
+            // Draw beach bands using buildingShader
             buildingShader.Use();
             buildingShader.SetMat4("projection", projection);
             buildingShader.SetMat4("view", view);
             buildingShader.SetFloat("time", (float)glfwGetTime());
             buildingShader.SetVec3("viewPos", camera.GetPosition());
             buildingShader.SetVec3("baseColor", glm::vec3(0.02f, 0.18f, 0.28f));
-            // pass sun direction and color for specular
-            // (original variable names changed to avoid redefinition conflicts elsewhere)
-            // glm::vec3 sunDir = ... (removed duplicate)
-            // float sunIntensity = ... (removed duplicate)
-            // glm::vec3 sunColor = ... (removed duplicate)
-            glm::vec3 waterSunDir = glm::normalize(glm::vec3(cos((timeOfDay/24.0f)*2.0f*M_PI), sin((timeOfDay/24.0f)*2.0f*M_PI), 0.0f));
-            float waterSunIntensity = (timeOfDay >= 6.0f && timeOfDay <= 18.0f) ? 1.0f : 0.2f;
-            glm::vec3 waterSunColor = glm::vec3(1.0f, 0.95f, 0.9f) * waterSunIntensity;
-            waterShader.SetVec3("sunDir", waterSunDir);
-            waterShader.SetVec3("sunColor", waterSunColor);
 
-            // Draw single continuous beach band on four sides (a frame) - flat horizontal line until end
             auto drawBeachX = [&](float centerZ, float sizeX, float sizeZ){
-                glm::vec3 beachColor = glm::vec3(0.94f, 0.85f, 0.62f); // sand color inline to avoid scope issues
+                glm::vec3 beachColor = glm::vec3(0.94f, 0.85f, 0.62f); // sand color
                 glm::mat4 bm = glm::mat4(1.0f);
                 bm = glm::translate(bm, glm::vec3(poolPos.x, waterY + sandHeight * 0.5f, poolPos.z + centerZ));
                 bm = glm::scale(bm, glm::vec3(sizeX, sandHeight, sizeZ));
@@ -2041,23 +2037,18 @@ void main() {
             waterShader.SetFloat("time", (float)glfwGetTime());
             waterShader.SetVec3("viewPos", camera.GetPosition());
             waterShader.SetVec3("baseColor", glm::vec3(0.02f, 0.18f, 0.28f));
-            // pass sun direction and color for specular
-            glm::vec3 sunDir = glm::normalize(glm::vec3(cos((timeOfDay/24.0f)*2.0f*M_PI), sin((timeOfDay/24.0f)*2.0f*M_PI), 0.0f));
-            float sunIntensity = (timeOfDay >= 6.0f && timeOfDay <= 18.0f) ? 1.0f : 0.2f;
-            glm::vec3 sunColor = glm::vec3(1.0f, 0.95f, 0.9f) * sunIntensity;
             waterShader.SetVec3("sunDir", sunDir);
             waterShader.SetVec3("sunColor", sunColor);
 
             glm::mat4 seaModel = glm::mat4(1.0f);
             seaModel = glm::translate(seaModel, glm::vec3(poolPos.x, waterY, poolPos.z));
-            // water is smaller than outer footprint so it stops at the beach
             seaModel = glm::scale(seaModel, glm::vec3(waterWidth, 1.0f, waterDepth));
             waterShader.SetMat4("model", seaModel);
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
             waterShader.SetInt("skybox", 0);
-            // optional dudv map binding (if available)
+
             static GLuint dudvTex = 0;
             if (dudvTex == 0) {
                 std::string dudvPath = "Textures/water_dudv.png";

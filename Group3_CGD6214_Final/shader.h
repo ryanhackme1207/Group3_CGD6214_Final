@@ -63,6 +63,9 @@ public:
     // Hot reloading (useful for development)
     bool Reload();
 
+    // Print the file paths this shader was loaded from (if any)
+    void PrintSourceFilePaths() const;
+
 private:
     // Store file paths for hot reloading
     std::string vertexPath_;

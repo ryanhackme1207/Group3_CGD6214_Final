@@ -208,6 +208,15 @@ bool Shader::Reload()
         geometryPath_.empty() ? nullptr : geometryPath_.c_str());
 }
 
+// Print source file paths
+void Shader::PrintSourceFilePaths() const
+{
+    std::cout << "Shader source paths:" << std::endl;
+    if (!vertexPath_.empty())   std::cout << "  Vertex:   " << vertexPath_ << std::endl; else std::cout << "  Vertex:   (inline)" << std::endl;
+    if (!fragmentPath_.empty()) std::cout << "  Fragment: " << fragmentPath_ << std::endl; else std::cout << "  Fragment: (inline)" << std::endl;
+    if (!geometryPath_.empty()) std::cout << "  Geometry: " << geometryPath_ << std::endl;
+}
+
 // Print active uniforms (for debugging)
 void Shader::PrintActiveUniforms() const
 {
