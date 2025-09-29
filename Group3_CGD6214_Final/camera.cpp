@@ -32,6 +32,12 @@ Camera::Camera(glm::vec3 position, glm::vec3 up, float yaw, float pitch)
     OrbitDistance = 15.0f;
     OrbitSpeed = 1.0f;
 
+    // First-person physics
+    isJumping = false;
+    verticalVelocity = 0.0f;
+    groundHeight = 0.0f; // world ground plane
+    eyeHeight = position.y; // assume current y as standing height
+
     // Initialize transition state
     isTransitioning = false;
     transitionTime = 0.0f;
@@ -90,7 +96,25 @@ void Camera::ProcessKeyboard(Camera_Movement direction, float deltaTime)
         return;
     }
 
-    // Standard movement for other modes
+    if (Mode == FIRST_PERSON) {
+        // Constrain movement to horizontal plane (ignore Y component of Front)
+        glm::vec3 forward = glm::normalize(glm::vec3(Front.x, 0.0f, Front.z));
+        glm::vec3 right = glm::normalize(glm::cross(forward, WorldUp));
+        if (direction == FORWARD) newPosition += forward * velocity;
+        if (direction == BACKWARD) newPosition -= forward * velocity;
+        if (direction == LEFT) newPosition -= right * velocity;
+        if (direction == RIGHT) newPosition += right * velocity;
+        // Ignore UP/DOWN for walking; jumping handled separately
+        Position = newPosition;
+        // Maintain eye height + any jump offset
+        if (!isJumping) {
+            Position.y = groundHeight + eyeHeight; // keep constant height while walking
+        }
+        ApplyBoundaries();
+        return;
+    }
+
+    // Standard movement for other modes (FREE_FLY, CINEMATIC)
     if (direction == FORWARD)
         newPosition += Front * velocity;
     if (direction == BACKWARD)
@@ -104,7 +128,7 @@ void Camera::ProcessKeyboard(Camera_Movement direction, float deltaTime)
     if (direction == DOWN)
         newPosition -= WorldUp * velocity;
 
-    // Apply movement immediately (disable smooth movement for debugging)
+    // Apply movement immediately
     Position = newPosition;
     ApplyBoundaries();
 
@@ -232,6 +256,14 @@ void Camera::SetCameraMode(CameraMode mode)
         // Set default orbit target to scene center
         OrbitTarget = glm::vec3(0.0f, 5.0f, 0.0f);
     }
+    if (mode == FIRST_PERSON) {
+        // Snap to ground walking height (preserve horizontal position)
+        eyeHeight = 1.8f; // typical human eye height
+        groundHeight = 0.0f; // world ground plane assumed y=0
+        Position.y = groundHeight + eyeHeight;
+        verticalVelocity = 0.0f;
+        isJumping = false;
+    }
 }
 
 // Update orbital camera
@@ -248,6 +280,38 @@ void Camera::SetOrbitTarget(glm::vec3 target, float distance)
 {
     OrbitTarget = target;
     OrbitDistance = distance;
+}
+
+// Jump trigger
+void Camera::Jump()
+{
+    if (Mode == FIRST_PERSON && !isJumping) {
+        isJumping = true;
+        verticalVelocity = 6.5f; // jump impulse
+    }
+}
+
+// Update first-person physics (gravity + jump)
+void Camera::UpdateFirstPerson(float deltaTime)
+{
+    if (Mode != FIRST_PERSON) return;
+
+    if (isJumping) {
+        // Apply gravity
+        verticalVelocity -= 9.81f * deltaTime; // gravity accel
+        Position.y += verticalVelocity * deltaTime;
+
+        // Check landing
+        float minY = groundHeight + eyeHeight;
+        if (Position.y <= minY) {
+            Position.y = minY;
+            isJumping = false;
+            verticalVelocity = 0.0f;
+        }
+    } else {
+        // Ensure we stay locked to ground plane when not jumping
+        Position.y = groundHeight + eyeHeight;
+    }
 }
 
 // Reset camera to default values

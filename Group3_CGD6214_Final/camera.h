@@ -65,6 +65,12 @@ public:
     float OrbitDistance;
     float OrbitSpeed;
 
+    // First-person jump/grounding
+    bool isJumping;
+    float verticalVelocity; // current vertical velocity (y axis)
+    float groundHeight;     // world ground Y
+    float eyeHeight;        // camera eye height above ground when standing
+
     // Constructors
     Camera(glm::vec3 position = glm::vec3(0.0f, 5.0f, 10.0f),
         glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f),
@@ -99,6 +105,10 @@ public:
     void SetCameraMode(CameraMode mode);
     void UpdateOrbitalCamera(float deltaTime);
     void SetOrbitTarget(glm::vec3 target, float distance = 15.0f);
+
+    // First-person physics (jump & gravity)
+    void Jump();
+    void UpdateFirstPerson(float deltaTime);
 
     // Utility functions
     void ResetToDefault();

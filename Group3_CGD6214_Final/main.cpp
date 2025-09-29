@@ -1126,6 +1126,7 @@ void main() {
         camera.UpdateSmoothMovement(deltaTime);
         camera.UpdateOrbitalCamera(deltaTime);
         camera.UpdateTransition(deltaTime);
+        camera.UpdateFirstPerson(deltaTime); // update jump/gravity if in first-person
 
         // Compute skyIntensity (shared for both forward & deferred paths)
         float skyIntensity;
@@ -2181,6 +2182,10 @@ void processInput(GLFWwindow* window)
         camera.ProcessKeyboard(DOWN, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
         camera.ProcessKeyboard(UP, deltaTime);
+    // Space to jump in FIRST_PERSON
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        if (camera.Mode == Camera::FIRST_PERSON) camera.Jump();
+    }
 
     // Camera mode switching
     if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && !cameraKeyPressed) {
