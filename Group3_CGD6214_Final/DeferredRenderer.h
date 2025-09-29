@@ -44,6 +44,10 @@ public:
     // Debug function to visualize G-Buffer contents
     void DebugDrawGBuffer(int bufferIndex = 0);
 
+    // HDR settings
+    void SetExposure(float value) { exposure = value; }
+    float GetExposure() const { return exposure; }
+
 private:
     // Screen dimensions
     int screenWidth, screenHeight;
@@ -55,6 +59,14 @@ private:
     GLuint gAlbedoSpec;  // RGB: albedo (diffuse color), A: specular intensity
     GLuint gDepth;       // Depth buffer
     
+    // HDR framebuffer objects
+    GLuint hdrFBO;
+    GLuint hdrColorBuffer;
+    GLuint hdrRBO;
+    
+    // HDR settings
+    float exposure;
+    
     // Fullscreen quad for lighting pass
     GLuint quadVAO, quadVBO;
     
@@ -62,9 +74,13 @@ private:
     std::unique_ptr<Shader> geometryShader;
     std::unique_ptr<Shader> lightingShader;
     std::unique_ptr<Shader> debugShader;
+    std::unique_ptr<Shader> hdrShader;
     
     // Initialize G-Buffer textures and framebuffer
     bool InitializeGBuffer();
+    
+    // Initialize HDR framebuffer
+    bool InitializeHDRBuffer();
     
     // Initialize fullscreen quad
     void InitializeQuad();

@@ -2263,6 +2263,21 @@ void processInput(GLFWwindow* window)
     if (glfwGetKey(window, GLFW_KEY_M) == GLFW_RELEASE) {
         msaaKeyPressed = false;
     }
+
+    // HDR exposure controls
+    static float exposureChangeRate = 0.5f;
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS) {
+        if (gUseDeferred) {
+            float exposure = gDeferred.GetExposure();
+            gDeferred.SetExposure(exposure + exposureChangeRate * deltaTime);
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS) {
+        if (gUseDeferred) {
+            float exposure = gDeferred.GetExposure();
+            gDeferred.SetExposure(std::max(0.1f, exposure - exposureChangeRate * deltaTime));
+        }
+    }
 }
 
 GLuint createCube()

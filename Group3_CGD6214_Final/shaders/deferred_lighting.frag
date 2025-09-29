@@ -1,30 +1,41 @@
 #version 330 core
 out vec4 FragColor;
-in vec2 TexCoord;
+
+in vec2 TexCoords;
 
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedoSpec;
 
-uniform vec3 ambientColor = vec3(0.2);
 uniform vec3 viewPos;
+uniform vec3 lightDir;
+uniform vec3 lightColor;
+uniform vec3 ambientColor;
 
-void main(){
-    vec3 pos = texture(gPosition, TexCoord).rgb;
-    vec3 normal = normalize(texture(gNormal, TexCoord).rgb);
-    vec4 albedoSpec = texture(gAlbedoSpec, TexCoord);
-    vec3 albedo = albedoSpec.rgb;
-    float specFactor = albedoSpec.a;
-
-    // Single hard-coded directional light for demo
-    vec3 lightDir = normalize(vec3(-0.4, -1.0, -0.3));
-    vec3 lightColor = vec3(1.0,0.96,0.9);
-
-    float diff = max(dot(normal, -lightDir), 0.0);
-    vec3 viewDir = normalize(viewPos - pos);
-    vec3 reflectDir = reflect(lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) * specFactor;
-
-    vec3 color = ambientColor * albedo + diff * lightColor * albedo + spec * lightColor;
-    FragColor = vec4(color,1.0);
+void main()
+{             
+    // Retrieve data from G-buffer
+    vec3 FragPos = texture(gPosition, TexCoords).rgb;
+    vec3 Normal = texture(gNormal, TexCoords).rgb;
+    vec4 AlbedoSpec = texture(gAlbedoSpec, TexCoords);
+    vec3 Diffuse = AlbedoSpec.rgb;
+    float Specular = AlbedoSpec.a;
+    
+    // Calculate lighting
+    vec3 ambient = ambientColor * Diffuse;
+    
+    vec3 viewDir = normalize(viewPos - FragPos);
+    vec3 halfwayDir = normalize(-lightDir + viewDir);
+    
+    float diff = max(dot(Normal, -lightDir), 0.0);
+    vec3 diffuse = diff * lightColor * Diffuse;
+    
+    float spec = pow(max(dot(Normal, halfwayDir), 0.0), 32.0);
+    vec3 specular = spec * Specular * lightColor;
+    
+    // Allow values to go beyond 1.0 for HDR
+    vec3 result = ambient + diffuse + specular;
+    
+    // Output HDR values directly, tone mapping will be applied later
+    FragColor = vec4(result, 1.0);
 }
