@@ -270,6 +270,9 @@ GLuint createGround();
 GLuint createTriangularRoof();
 GLuint createCylinder();
 int getGroundIndexCount(); // prototype for procedural ground index count provided by SceneHelpers.cpp
+// forward declare pool creation accessor
+extern GLuint createPool(float width, float depth, int nx, int nz);
+extern int getPoolIndexCount();
 
 // Data structures for one-time city generation
 struct BuildingInfo {
@@ -561,6 +564,9 @@ GLuint createGround();
 GLuint createTriangularRoof();
 GLuint createCylinder();
 int getGroundIndexCount(); // prototype for procedural ground index count provided by SceneHelpers.cpp
+// forward declare pool creation accessor
+extern GLuint createPool(float width, float depth, int nx, int nz);
+extern int getPoolIndexCount();
 
 int main()
 {
@@ -661,6 +667,7 @@ void main() {
     gl_Position = projection * view * model * vec4(aPos, 1.0);
 }
 )";
+
     std::string glowFrag = R"(
 #version 330 core
 out vec4 FragColor;
@@ -670,6 +677,7 @@ void main() {
     FragColor = vec4(glowColor, glowAlpha);
 }
 )";
+
     glowShader.LoadFromString(glowVert, glowFrag);
 
     // Spotlight volumetric beam shader (additive) - uses world-space position computed in vertex shader
@@ -690,6 +698,7 @@ void main() {
     gl_Position = projection * view * world;
 }
 )";
+
     std::string spotFrag = R"(
 #version 330 core
 in vec3 WorldPos;
@@ -726,6 +735,7 @@ void main() {
     FragColor = vec4(beamColor * alpha, alpha);
 }
 )";
+
     spotlightShader.LoadFromString(spotVert, spotFrag);
 
     // Create geometry
@@ -733,6 +743,17 @@ void main() {
     GLuint groundVAO = createGround();
     GLuint roofVAO = createTriangularRoof();
     GLuint cylinderVAO = createCylinder();
+    // create pool VAO
+    GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
+
+    // Water shader
+    Shader waterShader;
+    if (!waterShader.LoadFromFile("shaders/water.vert", "shaders/water.frag")) {
+        std::cerr << "Failed to load water shaders" << std::endl;
+    }
+    waterShader.Use();
+    waterShader.SetInt("skybox", 0);
+    // optional dudv map if provided
 
     // --- Shadow map setup ---
     const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
@@ -771,6 +792,86 @@ void main() {
     std::vector<glm::vec4> buildingBoxes; // x,z,halfW,halfD
     generateCity(buildings, smallTrees, buildingBoxes, 12345u);
 
+    // Attempt to place pool at user's requested camera location (if space allows)
+    glm::vec3 requestedPoolPos = glm::vec3(-25.00f, 0.05f, 44.1449f);
+    glm::vec3 poolPos = glm::vec3(-25.00f, 0.05f, 0.0f);
+    bool poolPlaced = false;
+    {
+        float poolHalfW = 6.0f; // createPool used width=12
+        float poolHalfD = 4.0f; // createPool used depth=8
+        float safety = 1.5f; // extra clearance
+        const float highwayHalf = 12.5f; // avoid main highways
+
+        // First: try requested position if it is not colliding and not on road
+        auto CollidesAny = [&](float cx, float cz)->bool {
+            for (const auto &bb : buildingBoxes) {
+                float bx = bb.x, bz = bb.y, halfB_W = bb.z, halfB_D = bb.w;
+                if (fabs(cx - bx) < (poolHalfW + halfB_W + safety) && fabs(cz - bz) < (poolHalfD + halfB_D + safety)) return true;
+            }
+            // avoid main highways (x~0 or z~0 regions)
+            if (fabs(cx) < (highwayHalf + poolHalfW + 1.0f) || fabs(cz) < (highwayHalf + poolHalfD + 1.0f)) return true;
+            return false;
+        };
+
+        if (!CollidesAny(requestedPoolPos.x, requestedPoolPos.z)) {
+            poolPos = requestedPoolPos;
+            poolPlaced = true;
+        }
+
+        // Second: try placing pool adjacent to existing buildings (four sides)
+        if (!poolPlaced) {
+            for (const auto &bb : buildingBoxes) {
+                if (poolPlaced) break;
+                float bx = bb.x, bz = bb.y, halfBW = bb.z, halfBD = bb.w;
+                // sample candidates along each side at several offsets
+                const int samples = 6;
+                // Right side (positive X)
+                for (int s = 0; s < samples && !poolPlaced; ++s) {
+                    float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
+                    float cz = bz - halfBD + frac * (halfBD * 2.0f);
+                    float cx = bx + halfBW + poolHalfW + safety + 0.5f;
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                }
+                // Left side (negative X)
+                for (int s = 0; s < samples && !poolPlaced; ++s) {
+                    float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
+                    float cz = bz - halfBD + frac * (halfBD * 2.0f);
+                    float cx = bx - halfBW - poolHalfW - safety - 0.5f;
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                }
+                // Front side (positive Z)
+                for (int s = 0; s < samples && !poolPlaced; ++s) {
+                    float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
+                    float cx = bx - halfBW + frac * (halfBW * 2.0f);
+                    float cz = bz + halfBD + poolHalfD + safety + 0.5f;
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                }
+                // Back side (negative Z)
+                for (int s = 0; s < samples && !poolPlaced; ++s) {
+                    float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
+                    float cx = bx - halfBW + frac * (halfBW * 2.0f);
+                    float cz = bz - halfBD - poolHalfD - safety - 0.5f;
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                }
+            }
+        }
+
+        // Last fallback: grid search like before but skip roads and buildings
+        if (!poolPlaced) {
+            for (float px = -100.0f; px <= 100.0f && !poolPlaced; px += 5.0f) {
+                for (float pz = -100.0f; pz <= 100.0f && !poolPlaced; pz += 5.0f) {
+                    if (CollidesAny(px, pz)) continue;
+                    poolPos = glm::vec3(px, requestedPoolPos.y, pz);
+                    poolPlaced = true;
+                    break;
+                }
+            }
+            if (!poolPlaced) {
+                poolPos = glm::vec3(50.0f, requestedPoolPos.y, 50.0f);
+            }
+        }
+    }
+
     // Load external model: visiongt1.obj (try several likely paths). Model loader will parse MTL and apply textures if available.
     Model visionModel;
     bool visionLoaded = false;
@@ -807,8 +908,8 @@ void main() {
             glm::vec3 cand((float)x, placeY_onSidewalk, side * sidewalkOffsetZ);
             bool coll = false;
             for (const auto &bb : buildingBoxes) {
-                float bx = bb.x, bz = bb.y, halfW = bb.z, halfD = bb.w;
-                if (fabs(cand.x - bx) < (halfW + collisionBuffer) && fabs(cand.z - bz) < (halfD + collisionBuffer)) { coll = true; break; }
+                float bx = bb.x, bz = bb.y, halfBW = bb.z, halfBD = bb.w;
+                if (fabs(cand.x - bx) < (halfBW + collisionBuffer) && fabs(cand.z - bz) < (halfBD + collisionBuffer)) { coll = true; break; }
             }
             if (!coll) {
                 visionPosition = cand;
@@ -825,8 +926,8 @@ void main() {
             glm::vec3 cand(side * sidewalkOffsetX, placeY_onSidewalk, (float)z);
             bool coll = false;
             for (const auto &bb : buildingBoxes) {
-                float bx = bb.x, bz = bb.y, halfW = bb.z, halfD = bb.w;
-                if (fabs(cand.x - bx) < (halfW + collisionBuffer) && fabs(cand.z - bz) < (halfD + collisionBuffer)) { coll = true; break; }
+                float bx = bb.x, bz = bb.y, halfBW = bb.z, halfBD = bb.w;
+                if (fabs(cand.x - bx) < (halfBW + collisionBuffer) && fabs(cand.z - bz) < (halfBD + collisionBuffer)) { coll = true; break; }
             }
             if (!coll) {
                 visionPosition = cand;
@@ -1808,6 +1909,109 @@ void main() {
         }
 
         // draw skybox
+        // Before skybox, render sea + beach so reflections include scene
+        {
+            // Sea/beach parameters
+            float outerSeaWidth = 160.0f; // total outer footprint including beach
+            float outerSeaDepth = 120.0f;
+            float beachBand = 20.0f; // single horizontal beach band that separates water from roads/buildings
+            // water is confined to inner rect so it won't reach roads/buildings
+            float waterWidth = glm::max(2.0f, outerSeaWidth - 2.0f * beachBand);
+            float waterDepth = glm::max(2.0f, outerSeaDepth - 2.0f * beachBand);
+
+            // place beach slightly above water so water never floods surrounding geometry
+            float sandHeight = 0.02f; // thin band
+            float waterY = poolPos.y - 0.06f; // lower water a bit (avoid flooding building bases at y=0)
+
+            buildingShader.Use();
+            buildingShader.SetMat4("projection", projection);
+            buildingShader.SetMat4("view", view);
+
+            glm::vec3 drySand = glm::vec3(0.94f, 0.85f, 0.62f);
+
+            // Draw single continuous beach band on four sides (a frame) - flat horizontal line until end
+            auto drawBeachX = [&](float centerZ, float sizeX, float sizeZ){
+                glm::mat4 bm = glm::mat4(1.0f);
+                bm = glm::translate(bm, glm::vec3(poolPos.x, waterY + sandHeight * 0.5f, poolPos.z + centerZ));
+                bm = glm::scale(bm, glm::vec3(sizeX, sandHeight, sizeZ));
+                buildingShader.SetMat4("model", bm);
+                buildingShader.SetVec3("objectColor", drySand);
+                glBindVertexArray(cubeVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            };
+            auto drawBeachZ = [&](float centerX, float sizeX, float sizeZ){
+                glm::mat4 bm = glm::mat4(1.0f);
+                bm = glm::translate(bm, glm::vec3(poolPos.x + centerX, waterY + sandHeight * 0.5f, poolPos.z));
+                bm = glm::scale(bm, glm::vec3(sizeX, sandHeight, sizeZ));
+                buildingShader.SetMat4("model", bm);
+                buildingShader.SetVec3("objectColor", drySand);
+                glBindVertexArray(cubeVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 36);
+            };
+
+            float outerX = outerSeaWidth + 2.0f * 0.0f; // outer extents
+            float outerZ = outerSeaDepth + 2.0f * 0.0f;
+
+            // North / South beach bands
+            drawBeachX((waterDepth * 0.6f) + (beachBand * 0.7f), outerX, beachBand);
+            drawBeachX(-(waterDepth * 0.5f) - (beachBand * 0.5f), outerX, beachBand);
+            // East / West beach bands
+            drawBeachZ((waterWidth * 0.5f) + (beachBand * 0.5f), beachBand, outerZ);
+            drawBeachZ(-(waterWidth * 0.5f) - (beachBand * 0.5f), beachBand, outerZ);
+
+            // Render water using water shader and the ground mesh (indexed)
+            waterShader.Use();
+            waterShader.SetMat4("projection", projection);
+            waterShader.SetMat4("view", view);
+            waterShader.SetFloat("time", (float)glfwGetTime());
+            waterShader.SetVec3("viewPos", camera.GetPosition());
+            waterShader.SetVec3("baseColor", glm::vec3(0.02f, 0.18f, 0.28f));
+            // pass sun direction and color for specular
+            glm::vec3 sunDir = glm::normalize(glm::vec3(cos((timeOfDay/24.0f)*2.0f*M_PI), sin((timeOfDay/24.0f)*2.0f*M_PI), 0.0f));
+            float sunIntensity = (timeOfDay >= 6.0f && timeOfDay <= 18.0f) ? 1.0f : 0.2f;
+            glm::vec3 sunColor = glm::vec3(1.0f, 0.95f, 0.9f) * sunIntensity;
+            waterShader.SetVec3("sunDir", sunDir);
+            waterShader.SetVec3("sunColor", sunColor);
+
+            glm::mat4 seaModel = glm::mat4(1.0f);
+            seaModel = glm::translate(seaModel, glm::vec3(poolPos.x, waterY, poolPos.z));
+            // water is smaller than outer footprint so it stops at the beach
+            seaModel = glm::scale(seaModel, glm::vec3(waterWidth, 1.0f, waterDepth));
+            waterShader.SetMat4("model", seaModel);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+            waterShader.SetInt("skybox", 0);
+            // optional dudv map binding (if available)
+            static GLuint dudvTex = 0;
+            if (dudvTex == 0) {
+                std::string dudvPath = "Textures/water_dudv.png";
+                int w,h,nc;
+                unsigned char* data = stbi_load(dudvPath.c_str(), &w, &h, &nc, 0);
+                if (data) {
+                    glGenTextures(1, &dudvTex);
+                    glBindTexture(GL_TEXTURE_2D, dudvTex);
+                    GLenum fmt = (nc==4)?GL_RGBA:GL_RGB;
+                    glTexImage2D(GL_TEXTURE_2D,0,fmt,w,h,0,fmt,GL_UNSIGNED_BYTE,data);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    stbi_image_free(data);
+                }
+            }
+            if (dudvTex) {
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, dudvTex);
+                waterShader.SetInt("dudvMap", 1);
+            }
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBindVertexArray(groundVAO);
+            glDrawElements(GL_TRIANGLES, getGroundIndexCount(), GL_UNSIGNED_INT, 0);
+            glBindVertexArray(0);
+            glDisable(GL_BLEND);
+        }
+
         glDepthFunc(GL_LEQUAL);
         glUseProgram(skyboxShader);
 

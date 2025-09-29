@@ -211,6 +211,64 @@ GLuint createCylinder()
     return VAO;
 }
 
+// Add pool creation (simple grid quad) with UVs and indices
+static int g_poolIndexCount = 0;
+GLuint createPool(float width = 10.0f, float depth = 6.0f, int nx = 32, int nz = 24) {
+    int GRIDX = nx;
+    int GRIDZ = nz;
+    std::vector<float> verts;
+    verts.reserve(GRIDX * GRIDZ * 8);
+    float halfW = width * 0.5f;
+    float halfD = depth * 0.5f;
+    for (int z = 0; z < GRIDZ; ++z) {
+        for (int x = 0; x < GRIDX; ++x) {
+            float u = (float)x / (GRIDX - 1);
+            float v = (float)z / (GRIDZ - 1);
+            float px = -halfW + u * width;
+            float pz = -halfD + v * depth;
+            // position
+            verts.push_back(px);
+            verts.push_back(0.0f);
+            verts.push_back(pz);
+            // normal up
+            verts.push_back(0.0f); verts.push_back(1.0f); verts.push_back(0.0f);
+            // uv
+            verts.push_back(u); verts.push_back(v);
+        }
+    }
+    std::vector<unsigned int> inds;
+    for (int z = 0; z < GRIDZ - 1; ++z) {
+        for (int x = 0; x < GRIDX - 1; ++x) {
+            unsigned int i0 = z * GRIDX + x;
+            unsigned int i1 = i0 + 1;
+            unsigned int i2 = i0 + GRIDX;
+            unsigned int i3 = i2 + 1;
+            inds.push_back(i0); inds.push_back(i2); inds.push_back(i1);
+            inds.push_back(i1); inds.push_back(i2); inds.push_back(i3);
+        }
+    }
+
+    GLuint VAO, VBO, EBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, inds.size() * sizeof(unsigned int), inds.data(), GL_STATIC_DRAW);
+
+    // layout: pos(3), normal(3), uv(2)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
+    g_poolIndexCount = static_cast<int>(inds.size());
+    return VAO;
+}
+int getPoolIndexCount() { return g_poolIndexCount; }
+
 void renderRealisticCar(const Car& car, Shader& shader, GLuint cubeVAO, GLuint cylinderVAO)
 {
     // Basic wrapper that matches main.cpp's complex implementation

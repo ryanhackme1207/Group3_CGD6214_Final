@@ -163,6 +163,8 @@
     <None Include="shaders\normalmap.frag" />
     <None Include="shaders\shadowmap.frag" />
     <None Include="shaders\shadowmap.vert" />
+    <None Include="shaders\water.frag" />
+    <None Include="shaders\water.vert" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="textures\nx.jpg" />
