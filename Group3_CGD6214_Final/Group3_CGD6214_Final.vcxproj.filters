@@ -139,7 +139,11 @@
     <None Include="shaders\gbuffer.frag">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\hdr.frag" />
+    <None Include="shaders\hdr.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\bloom_extract.frag" />
+    <None Include="shaders\bloom_blur.frag" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="textures\nx.jpg">

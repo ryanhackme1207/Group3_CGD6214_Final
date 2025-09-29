@@ -48,6 +48,12 @@ public:
     void SetExposure(float value) { exposure = value; }
     float GetExposure() const { return exposure; }
 
+    // Bloom controls
+    void SetBloomEnabled(bool v) { bloomEnabled = v; }
+    bool IsBloomEnabled() const { return bloomEnabled; }
+    void SetBloomIntensity(float v) { bloomIntensity = v; }
+    float GetBloomIntensity() const { return bloomIntensity; }
+
 private:
     // Screen dimensions
     int screenWidth, screenHeight;
@@ -64,8 +70,14 @@ private:
     GLuint hdrColorBuffer;
     GLuint hdrRBO;
     
-    // HDR settings
+    // Bloom ping-pong framebuffers/textures
+    GLuint pingpongFBO[2];
+    GLuint pingpongColor[2];
+
+    // Settings
     float exposure;
+    bool bloomEnabled;
+    float bloomIntensity;
     
     // Fullscreen quad for lighting pass
     GLuint quadVAO, quadVBO;
@@ -74,13 +86,18 @@ private:
     std::unique_ptr<Shader> geometryShader;
     std::unique_ptr<Shader> lightingShader;
     std::unique_ptr<Shader> debugShader;
-    std::unique_ptr<Shader> hdrShader;
+    std::unique_ptr<Shader> hdrShader;          // tone mapping combine
+    std::unique_ptr<Shader> bloomExtractShader; // bright pass
+    std::unique_ptr<Shader> bloomBlurShader;    // gaussian blur
     
     // Initialize G-Buffer textures and framebuffer
     bool InitializeGBuffer();
     
     // Initialize HDR framebuffer
     bool InitializeHDRBuffer();
+    
+    // Initialize Bloom buffers
+    bool InitializeBloomBuffers();
     
     // Initialize fullscreen quad
     void InitializeQuad();

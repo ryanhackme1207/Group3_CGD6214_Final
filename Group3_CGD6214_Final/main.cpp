@@ -2264,6 +2264,13 @@ void processInput(GLFWwindow* window)
         msaaKeyPressed = false;
     }
 
+    // Bloom controls (deferred only)
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
+        static bool pressed=false; if(!pressed){ pressed=true; if(gUseDeferred){ gDeferred.SetBloomEnabled(!gDeferred.IsBloomEnabled()); std::cout << "Bloom: " << (gDeferred.IsBloomEnabled()?"ON":"OFF") << std::endl; }}
+    } else { /* release */ }
+    if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) { if(gUseDeferred){ float bi=gDeferred.GetBloomIntensity(); gDeferred.SetBloomIntensity(std::min(5.0f, bi + 0.5f*deltaTime)); }}
+    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) { if(gUseDeferred){ float bi=gDeferred.GetBloomIntensity(); gDeferred.SetBloomIntensity(std::max(0.0f, bi - 0.5f*deltaTime)); }}
+
     // HDR exposure controls
     static float exposureChangeRate = 0.5f;
     if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS) {
@@ -2357,7 +2364,6 @@ GLuint createCube()
     for (auto &v : verts) {
         if (glm::length(v.tangent) > 1e-6f) v.tangent = glm::normalize(v.tangent);
         else {
-            // fallback tangent: perpendicular to normal
             glm::vec3 n = glm::normalize(v.norm);
             glm::vec3 t = glm::normalize(glm::cross(glm::vec3(0.0f,1.0f,0.0f), n));
             if (glm::length(t) < 1e-3f) t = glm::vec3(1.0f, 0.0f, 0.0f);

@@ -160,6 +160,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\basic.vert" />
+    <None Include="shaders\bloom_blur.frag" />
+    <None Include="shaders\bloom_extract.frag" />
     <None Include="shaders\deferred_lighting.frag" />
     <None Include="shaders\fullscreen_quad.vert" />
     <None Include="shaders\gbuffer.frag" />
