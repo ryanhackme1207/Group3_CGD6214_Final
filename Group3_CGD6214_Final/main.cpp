@@ -838,28 +838,32 @@ void main() {
                     float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
                     float cz = bz - halfBD + frac * (halfBD * 2.0f);
                     float cx = bx + halfBW + poolHalfW + safety + 0.5f;
-                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break;
+}
                 }
                 // Left side (negative X)
                 for (int s = 0; s < samples && !poolPlaced; ++s) {
                     float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
                     float cz = bz - halfBD + frac * (halfBD * 2.0f);
                     float cx = bx - halfBW - poolHalfW - safety - 0.5f;
-                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break;
+}
                 }
                 // Front side (positive Z)
                 for (int s = 0; s < samples && !poolPlaced; ++s) {
                     float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
                     float cx = bx - halfBW + frac * (halfBW * 2.0f);
                     float cz = bz + halfBD + poolHalfD + safety + 0.5f;
-                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break;
+}
                 }
                 // Back side (negative Z)
                 for (int s = 0; s < samples && !poolPlaced; ++s) {
                     float frac = (samples == 1) ? 0.5f : (float)s / (float)(samples-1);
                     float cx = bx - halfBW + frac * (halfBW * 2.0f);
                     float cz = bz - halfBD - poolHalfD - safety - 0.5f;
-                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break; }
+                    if (!CollidesAny(cx, cz)) { poolPos = glm::vec3(cx, requestedPoolPos.y, cz); poolPlaced = true; break;
+}
                 }
             }
         }
@@ -1230,7 +1234,7 @@ void main() {
         buildingShader.SetMat4("view", view);
 
         // Draw scene graph hierarchical models
-        // This renders the small hierarchy: District->Block->House->Roof->Window        sceneGraph.Draw(buildingShader);
+        // This renders the small hierarchy: District->Block->House->Roof->Window        // sceneGraph.Draw(buildingShader);
 
         // Set lighting uniforms (sun-like lighting)
         // Predeclare light containers so we can use them for a second additive pass (glow)
@@ -2199,30 +2203,15 @@ void processInput(GLFWwindow* window)
     // Camera mode switching
     if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && !cameraKeyPressed) {
         cameraKeyPressed = true;
-
-        // Cycle through camera modes
         static int currentMode = 0;
         currentMode = (currentMode + 1) % 3;  // 3 modes: FREE_FLY, FIRST_PERSON, ORBITAL
-
         switch (currentMode) {
-        case 0:
-            camera.SetCameraMode(Camera::FREE_FLY);
-            std::cout << "Camera Mode: FREE FLY" << std::endl;
-            break;
-        case 1:
-            camera.SetCameraMode(Camera::FIRST_PERSON);
-            std::cout << "Camera Mode: FIRST PERSON" << std::endl;
-            break;
-        case 2:
-            camera.SetCameraMode(Camera::ORBITAL);
-            camera.SetOrbitTarget(glm::vec3(0.0f, 8.0f, 0.0f), 40.0f);
-            std::cout << "Camera Mode: ORBITAL" << std::endl;
-            break;
+        case 0: camera.SetCameraMode(Camera::FREE_FLY); std::cout << "Camera Mode: FREE FLY" << std::endl; break;
+        case 1: camera.SetCameraMode(Camera::FIRST_PERSON); std::cout << "Camera Mode: FIRST PERSON" << std::endl; break;
+        case 2: camera.SetCameraMode(Camera::ORBITAL); camera.SetOrbitTarget(glm::vec3(0.0f, 8.0f, 0.0f), 40.0f); std::cout << "Camera Mode: ORBITAL" << std::endl; break;
         }
     }
-    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_RELEASE) {
-        cameraKeyPressed = false;
-    }
+    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_RELEASE) cameraKeyPressed = false;
 
     // Reset camera
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
@@ -2232,84 +2221,35 @@ void processInput(GLFWwindow* window)
 
     // Hot reload shaders (F5)
     static bool f5KeyPressed = false;
-    if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS && !f5KeyPressed) {
-        f5KeyPressed = true;
-        std::cout << "Reloading shaders from files..." << std::endl;
-        std::cout << "Shader hot-reload feature requires global shader reference" << std::endl;
-    }
-    if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_RELEASE) {
-        f5KeyPressed = false;
-    }
+    if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS && !f5KeyPressed) { f5KeyPressed = true; std::cout << "Reloading shaders from files..." << std::endl; }
+    if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_RELEASE) f5KeyPressed = false;
 
     // Speed adjustment
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-        camera.MovementSpeed = 25.0f;  // Fast movement for larger city
-    }
-    else {
-        camera.MovementSpeed = 12.0f;  // Normal speed
-    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) camera.MovementSpeed = 25.0f; else camera.MovementSpeed = 12.0f;
 
     // Light mode
-    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS && !lightKeyPressed) {
-        lightKeyPressed = true;
-        useDirectionalLight = !useDirectionalLight;
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS && !lightKeyPressed) { lightKeyPressed = true; useDirectionalLight = !useDirectionalLight; std::cout << "Light mode: " << (useDirectionalLight?"Directional":"Point") << std::endl; }
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE) lightKeyPressed = false;
 
-        if (useDirectionalLight) {
-            std::cout << "Light mode: Directional" << std::endl;
-        }
-        else {
-            std::cout << "Light mode: Point" << std::endl;
-        }
-    }
-    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_RELEASE) {
-        lightKeyPressed = false;
-    }
-
-    // MSAA switch
+    // MSAA switch (M cycles samples)
     if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS && !msaaKeyPressed) {
         msaaKeyPressed = true;
-
-        if (MSAA > 0) {
-            MSAA = 0;
-            glDisable(GL_MULTISAMPLE);
-            if(gUseDeferred){ gDeferred.SetMSAASamples(0); }
-            std::cout << "MSAA: OFF" << std::endl;
-        }
-        else {
-            // cycle common sample counts 4 -> 8 -> 2 -> 4 ... (example)
-            static int cycle = 0; int samplesCycle[3] = {4,8,2};
-            int chosen = samplesCycle[cycle]; cycle = (cycle+1)%3;
-            MSAA = chosen;
-            glEnable(GL_MULTISAMPLE);
-            if(gUseDeferred){ gDeferred.SetMSAASamples(chosen); }
-            std::cout << "MSAA: ON (" << chosen << "x)" << std::endl;
-        }
+        if (MSAA > 0) { MSAA = 0; glDisable(GL_MULTISAMPLE); if(gUseDeferred) gDeferred.SetMSAASamples(0); std::cout << "MSAA: OFF" << std::endl; }
+        else { static int cycle = 0; int samplesCycle[3]={4,8,2}; int chosen = samplesCycle[cycle]; cycle=(cycle+1)%3; MSAA=chosen; glEnable(GL_MULTISAMPLE); if(gUseDeferred) gDeferred.SetMSAASamples(chosen); std::cout << "MSAA: ON ("<<chosen<<"x)" << std::endl; }
     }
-    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_RELEASE) {
-        msaaKeyPressed = false;
-    }
+    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_RELEASE) msaaKeyPressed = false;
 
-    // Bloom controls (deferred only)
+    // Bloom controls (deferred only) -- B toggles, N increases intensity
+    static bool bloomTogglePressed = false;
     if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
-        static bool pressed=false; if(!pressed){ pressed=true; if(gUseDeferred){ gDeferred.SetBloomEnabled(!gDeferred.IsBloomEnabled()); std::cout << "Bloom: " << (gDeferred.IsBloomEnabled()?"ON":"OFF") << std::endl; }}
-    } else { /* release */ }
+        if(!bloomTogglePressed){ bloomTogglePressed=true; if(gUseDeferred){ gDeferred.SetBloomEnabled(!gDeferred.IsBloomEnabled()); std::cout<<"Bloom: "<<(gDeferred.IsBloomEnabled()?"ON":"OFF")<<std::endl; }}
+    } else { bloomTogglePressed=false; }
     if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) { if(gUseDeferred){ float bi=gDeferred.GetBloomIntensity(); gDeferred.SetBloomIntensity(std::min(5.0f, bi + 0.5f*deltaTime)); }}
-    if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) { if(gUseDeferred){ float bi=gDeferred.GetBloomIntensity(); gDeferred.SetBloomIntensity(std::max(0.0f, bi - 0.5f*deltaTime)); }}
 
-    // HDR exposure controls
+    // HDR exposure controls J/K
     static float exposureChangeRate = 0.5f;
-    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS) {
-        if (gUseDeferred) {
-            float exposure = gDeferred.GetExposure();
-            gDeferred.SetExposure(exposure + exposureChangeRate * deltaTime);
-        }
-    }
-    if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS) {
-        if (gUseDeferred) {
-            float exposure = gDeferred.GetExposure();
-            gDeferred.SetExposure(std::max(0.1f, exposure - exposureChangeRate * deltaTime));
-        }
-    }
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS && gUseDeferred) { float exposure = gDeferred.GetExposure(); gDeferred.SetExposure(exposure + exposureChangeRate * deltaTime); }
+    if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS && gUseDeferred) { float exposure = gDeferred.GetExposure(); gDeferred.SetExposure(std::max(0.1f, exposure - exposureChangeRate * deltaTime)); }
 
     // Toggle GUI visibility F1
     static bool f1Pressed=false; if(glfwGetKey(window,GLFW_KEY_F1)==GLFW_PRESS){ if(!f1Pressed){ f1Pressed=true; SimpleGUI::Instance().ToggleVisible(); }} else if(glfwGetKey(window,GLFW_KEY_F1)==GLFW_RELEASE){ f1Pressed=false; }
@@ -2317,112 +2257,43 @@ void processInput(GLFWwindow* window)
 
 GLuint createCube()
 {
-    // original interleaved data: pos(3), normal(3), texcoord(2)
     static const float srcVertices[] = {
-        // positions          // normals           // texture coords
-        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  0.0f,
-         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
-        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
-
-        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
-         0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
-        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
-
-        -0.5f,  0.5f,  0.5f, -1.0f,  0.707f,  0.707f,  1.0f, 0.0f,
-        -0.5f,  0.5f, -0.5f, -1.0f,  0.707f,  0.707f,  1.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f, -1.0f,  0.707f,  0.707f,  0.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f, -1.0f,  0.707f,  0.707f,  0.0f, 1.0f,
-        -0.5f, -0.5f,  0.5f, -1.0f,  0.707f,  0.707f,  0.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f, -1.0f,  0.707f,  0.707f,  1.0f, 0.0f,
-
-         0.5f,  0.5f,  0.5f,  1.0f,  0.707f,  0.707f,  1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f,  1.0f,  0.707f,  0.707f,  1.0f, 1.0f,
-         0.5f, -0.5f, -0.5f,  1.0f,  0.707f,  0.707f,  0.0f, 1.0f,
-         0.5f, -0.5f, -0.5f,  1.0f,  0.707f,  0.707f,  0.0f, 1.0f,
-         0.5f, -0.5f,  0.5f,  1.0f,  0.707f,  0.707f,  0.0f, 0.0f,
-         0.5f,  0.5f,  0.5f,  1.0f,  0.707f,  0.707f,  1.0f, 0.0f,
-
-        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
-         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
-         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
-         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
-        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
-        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,   0.0f,  0.0f, 1.0f,
-
-        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
-          0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f,
-        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f
+        -0.5f,-0.5f,-0.5f, 0,0,-1, 0,0,
+         0.5f,-0.5f,-0.5f, 0,0,-1, 1,0,
+         0.5f, 0.5f,-0.5f, 0,0,-1, 1,1,
+         0.5f, 0.5f,-0.5f, 0,0,-1, 1,1,
+        -0.5f, 0.5f,-0.5f, 0,0,-1, 0,1,
+        -0.5f,-0.5f,-0.5f, 0,0,-1, 0,0,
+        -0.5f,-0.5f, 0.5f, 0,0, 1, 0,0,
+         0.5f,-0.5f, 0.5f, 0,0, 1, 1,0,
+         0.5f, 0.5f, 0.5f, 0,0, 1, 1,1,
+         0.5f, 0.5f, 0.5f, 0,0, 1, 1,1,
+        -0.5f, 0.5f, 0.5f, 0,0, 1, 0,1,
+        -0.5f,-0.5f, 0.5f, 0,0, 1, 0,0,
+        -0.5f, 0.5f, 0.5f,-1,0,0, 1,0,
+        -0.5f, 0.5f,-0.5f,-1,0,0, 1,1,
+        -0.5f,-0.5f,-0.5f,-1,0,0, 0,1,
+        -0.5f,-0.5f,-0.5f,-1,0,0, 0,1,
+        -0.5f,-0.5f, 0.5f,-1,0,0, 0,0,
+        -0.5f, 0.5f, 0.5f,-1,0,0, 1,0,
+         0.5f, 0.5f, 0.5f, 1,0,0, 1,0,
+         0.5f, 0.5f,-0.5f, 1,0,0, 1,1,
+         0.5f,-0.5f,-0.5f, 1,0,0, 0,1,
+         0.5f,-0.5f,-0.5f, 1,0,0, 0,1,
+         0.5f,-0.5f, 0.5f, 1,0,0, 0,0,
+         0.5f, 0.5f, 0.5f, 1,0,0, 1,0,
+        -0.5f,-0.5f,-0.5f, 0,-1,0, 0,1,
+         0.5f,-0.5f,-0.5f, 0,-1,0, 1,1,
+         0.5f,-0.5f, 0.5f, 0,-1,0, 1,0,
+         0.5f,-0.5f, 0.5f, 0,-1,0, 1,0,
+        -0.5f,-0.5f, 0.5f, 0,-1,0, 0,0,
+        -0.5f,-0.5f,-0.5f, 0,-1,0, 0,1,
+        -0.5f, 0.5f,-0.5f, 0, 1,0, 0,1,
+         0.5f, 0.5f,-0.5f, 0, 1,0, 1,1,
+         0.5f, 0.5f, 0.5f, 0, 1,0, 1,0,
+         0.5f, 0.5f, 0.5f, 0, 1,0, 1,0,
+        -0.5f, 0.5f, 0.5f, 0, 1,0, 0,0,
+        -0.5f, 0.5f,-0.5f, 0, 1,0, 0,1
     };
-
-    const size_t SRC_STRIDE = 8; // floats per src vertex
-    const size_t SRC_COUNT = sizeof(srcVertices) / (SRC_STRIDE * sizeof(float));
-
-    struct V { glm::vec3 pos; glm::vec3 norm; glm::vec2 uv; glm::vec3 tangent; };
-    std::vector<V> verts; verts.resize(SRC_COUNT);
-
-    for (size_t i = 0; i < SRC_COUNT; ++i) {
-        const float* s = &srcVertices[i * SRC_STRIDE];
-        verts[i].pos = glm::vec3(s[0], s[1], s[2]);
-        verts[i].norm = glm::vec3(s[3], s[4], s[5]);
-        verts[i].uv = glm::vec2(s[6], s[7]);
-        verts[i].tangent = glm::vec3(0.0f);
-    }
-
-    // compute per-triangle tangents (tri list)
-    for (size_t i = 0; i + 2 < SRC_COUNT; i += 3) {
-        V &v0 = verts[i+0]; V &v1 = verts[i+1]; V &v2 = verts[i+2];
-        glm::vec3 edge1 = v1.pos - v0.pos;
-        glm::vec3 edge2 = v2.pos - v0.pos;
-        glm::vec2 deltaUV1 = v1.uv - v0.uv;
-        glm::vec2 deltaUV2 = v2.uv - v0.uv;
-        float denom = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
-        float f = (fabs(denom) > 1e-8f) ? (1.0f / denom) : 0.0f;
-        glm::vec3 tangent = f * (edge1 * deltaUV2.y - edge2 * deltaUV1.y);
-        v0.tangent += tangent; v1.tangent += tangent; v2.tangent += tangent;
-    }
-    for (auto &v : verts) {
-        if (glm::length(v.tangent) > 1e-6f) v.tangent = glm::normalize(v.tangent);
-        else {
-            glm::vec3 n = glm::normalize(v.norm);
-            glm::vec3 t = glm::normalize(glm::cross(glm::vec3(0.0f,1.0f,0.0f), n));
-            if (glm::length(t) < 1e-3f) t = glm::vec3(1.0f, 0.0f, 0.0f);
-            v.tangent = t;
-        }
-    }
-
-    // build interleaved buffer pos(3), normal(3), uv(2), tangent(3)
-    std::vector<float> flat; flat.reserve(SRC_COUNT * 11);
-    for (const auto &v : verts) {
-        flat.push_back(v.pos.x); flat.push_back(v.pos.y); flat.push_back(v.pos.z);
-        flat.push_back(v.norm.x); flat.push_back(v.norm.y); flat.push_back(v.norm.z);
-        flat.push_back(v.uv.x); flat.push_back(v.uv.y);
-        flat.push_back(v.tangent.x); flat.push_back(v.tangent.y); flat.push_back(v.tangent.z);
-    }
-
-    GLuint VBO, VAO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, flat.size() * sizeof(float), flat.data(), GL_STATIC_DRAW);
-
-    GLsizei stride = 11 * sizeof(float);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0); glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float))); glEnableVertexAttribArray(3);
-
-    glBindVertexArray(0);
-
-    return VAO;
+    GLuint VAO,VBO; glGenVertexArrays(1,&VAO); glGenBuffers(1,&VBO); glBindVertexArray(VAO); glBindBuffer(GL_ARRAY_BUFFER,VBO); glBufferData(GL_ARRAY_BUFFER,sizeof(srcVertices),srcVertices,GL_STATIC_DRAW); GLsizei stride = 8*sizeof(float); glEnableVertexAttribArray(0); glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,stride,(void*)0); glEnableVertexAttribArray(1); glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,stride,(void*)(3*sizeof(float))); glEnableVertexAttribArray(2); glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,stride,(void*)(6*sizeof(float))); glBindVertexArray(0); return VAO;
 }
