@@ -13,6 +13,7 @@ public:
     void Draw(float deltaTime);
     void ToggleVisible(){ m_visible = !m_visible; }
     bool IsVisible() const { return m_visible; }
+    // Scene hierarchy integration
     void SetSceneRoot(SceneNode* root){ m_sceneRoot = root; m_openState[root]=true; }
     SceneNode* GetSelectedNode() const { return m_selectedNode; }
     void SetCamera(Camera* cam){ m_camera = cam; }
@@ -55,8 +56,6 @@ private:
     std::vector<SceneNode*> m_visibleNodes; int m_navIndex=-1; bool m_prevDown=false; bool m_prevUp=false; bool m_prevEnter=false; bool m_downPressedFrame=false; bool m_upPressedFrame=false; bool m_enterPressedFrame=false;
     // performance history
     static const int FRAME_HISTORY = 120; float m_frameTimes[FRAME_HISTORY]={0}; int m_frameIndex=0; bool m_historyFilled=false; float m_minFrameMs=0.f; float m_maxFrameMs=0.f; float m_avgFrameMs=0.f;
-    // Performance graph color (T/Y/U keys) and per-channel debounce timers
-    float m_perfColR = 0.27f; float m_perfColG = 0.86f; float m_perfColB = 0.40f; double m_lastAdjustR=0.0; double m_lastAdjustG=0.0; double m_lastAdjustB=0.0;
     // picking
     Camera* m_camera=nullptr; SceneNode* m_pickCandidate=nullptr; float m_pickCandidateDist=1e9f; bool m_requestPick=false; bool m_dragging=false; glm::vec3 m_dragStartHit{0}; glm::vec3 m_dragStartNodePos{0};
     // help / shortcuts
