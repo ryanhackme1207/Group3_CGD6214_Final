@@ -110,21 +110,77 @@ bool Model::LoadOBJ(const std::string& path) {
         }
     }
 
-    // Decide whether to load textures: only enable for visiongt OBJ
+    // Decide whether to load textures: previously only enabled for visiongt. Now enable if:
+    //  - filename contains visiongt OR supra (case-insensitive)
+    //  - OR an mtllib statement was found (mtlFileName not empty)
     bool loadTextures = false;
     size_t pos = path.find_last_of("/\\");
     std::string fname = (pos == std::string::npos) ? path : path.substr(pos + 1);
-    // lowercase filename for case-insensitive check
-    std::string lower = fname;
-    for (auto& ch : lower) ch = static_cast<char>(::tolower(ch));
-    if (lower.find("visiongt") != std::string::npos) loadTextures = true;
+    std::string lower = fname; for (auto &ch : lower) ch = static_cast<char>(::tolower(ch));
+    if (lower.find("visiongt") != std::string::npos || lower.find("supra") != std::string::npos) loadTextures = true;
+    if (!loadTextures && !mtlFileName.empty()) {
+        // mtllib present -> attempt textures anyway
+        loadTextures = true;
+    }
+    std::cout << "Model '" << fname << "' loadTextures=" << (loadTextures?"true":"false") << " (mtl='" << mtlFileName << "')" << std::endl;
 
     // Attempt to locate texture via MTL if available and map textures per material
     std::unordered_map<std::string, std::string> materialToTexture;
     if (loadTextures && !mtlFileName.empty()) {
         std::string dir = GetDirectory(path);
+        // --- NEW: normalize mtllib if it has no extension (e.g. '1997') ---
+        // Cases: (1) It's actually a directory name containing the .mtl (e.g. dir+"1997/supra.mtl")
+        //        (2) It's a basename missing .mtl (e.g. 'supra' => 'supra.mtl')
+        if (mtlFileName.find('.') == std::string::npos) {
+            auto fileExists = [](const std::string &p){ std::ifstream f(p); return f.is_open(); };
+            // Candidate full paths to test (searched in order)
+            std::vector<std::string> mtlCandidates;
+            // 1. Treat token as basename missing extension in same folder
+            mtlCandidates.push_back(dir + mtlFileName + ".mtl");
+            // 2. Treat token as directory containing common names
+            mtlCandidates.push_back(dir + mtlFileName + "/supra.mtl");
+            mtlCandidates.push_back(dir + mtlFileName + "/Supra.mtl");
+            mtlCandidates.push_back(dir + mtlFileName + "/1997.mtl");
+            // 3. Generic materials names inside that directory
+            mtlCandidates.push_back(dir + mtlFileName + "/materials.mtl");
+            mtlCandidates.push_back(dir + mtlFileName + "/material.mtl");
+            std::string resolved;
+            for (const auto &cand : mtlCandidates) { if (fileExists(cand)) { resolved = cand; break; } }
+            if (!resolved.empty()) {
+                std::cout << "Resolved mtllib token '"<<mtlFileName<<"' to '"<<resolved<<"'" << std::endl;
+                // Store absolute resolved path separately by overwriting mtlFileName with absolute so later logic builds correctly
+                // Since later code does: std::string mtlPath = dir + mtlFileName; if we leave absolute there it will duplicate dir.
+                // Instead we detect absolute (contains dir prefix) and set a flag.
+                // Simpler: store resolved path in mtlFileName and mark dir empty so concatenation still works.
+                // We'll prepend only if mtlFileName isn't already starting with dir.
+                if (resolved.find(dir) == 0) {
+                    // strip dir prefix so later concatenation re-adds it (works either way if we guard below)
+                    mtlFileName = resolved.substr(dir.size());
+                } else {
+                    mtlFileName = resolved; // unusual but keep
+                }
+            } else {
+                std::cout << "Could not auto-resolve mtllib token '"<<mtlFileName<<"' (no extension). Will continue with fallback search." << std::endl;
+            }
+        }
         std::string mtlPath = dir + mtlFileName;
         std::ifstream mtl(mtlPath);
+        if(!mtl.is_open()){
+            // If mtlFileName was actually an absolute or relative path we already built wrongly, retry raw
+            if(mtlFileName.find(dir)==std::string::npos) {
+                std::ifstream direct(mtlFileName);
+                if(direct.is_open()){ mtl.swap(direct); mtlPath = mtlFileName; }
+            }
+            // Try fallback subdirectories (common for nested year folders e.g., 1997/)
+            if(!mtl.is_open()){
+                std::vector<std::string> fallbackDirs = { dir + "1997/", dir + "Textures/", dir + "textures/" };
+                for(const auto &fd : fallbackDirs){
+                    std::string cand = fd + mtlFileName;
+                    std::ifstream test(cand);
+                    if(test.is_open()){ mtl.swap(test); mtlPath=cand; std::cout<<"MTL fallback located at: "<<mtlPath<<std::endl; break; }
+                }
+            }
+        }
         if (mtl.is_open()) {
             std::cout << "Parsing MTL: " << mtlPath << std::endl;
             std::string mline;
@@ -135,34 +191,32 @@ bool Model::LoadOBJ(const std::string& path) {
                 if (!(miss >> mprefix)) continue;
                 if (mprefix == "newmtl") {
                     miss >> activeMat;
-                    // trim
                     if (activeMat.size() && activeMat.back() == '\r') activeMat.pop_back();
-                    // debug
                     std::cout << "Found material: '" << activeMat << "'" << std::endl;
-                }
-                else if (mprefix == "map_Kd" || mprefix == "map_kd" || mprefix == "map_Ka") {
+                } else if (mprefix == "map_Kd" || mprefix == "map_kd" || mprefix == "map_Ka" ) {
                     std::string texname; miss >> texname;
-                    if (!texname.empty() && texname.back() == '\r') texname.pop_back();
+                    if(!texname.empty() && texname.back()=='\r') texname.pop_back();
                     if (!texname.empty()) {
-                        std::string texpath = dir + texname;
-                        std::ifstream ttest(texpath);
-                        if (!ttest.is_open()) {
-                            texpath = dir + "textures/" + texname;
-                            std::ifstream ttest2(texpath);
-                            if (!ttest2.is_open()) texpath.clear();
-                        }
-                        if (!texpath.empty() && !activeMat.empty()) {
-                            materialToTexture[activeMat] = texpath;
-                            std::cout << "Material '" << activeMat << "' -> texture '" << texpath << "'" << std::endl;
-                        }
-                        else {
-                            std::cout << "Texture '" << texname << "' not found for material '" << activeMat << "'" << std::endl;
+                        // If texname has no path separators, look in mtl directory and its parent & common subfolders
+                        std::vector<std::string> texCandidates;
+                        std::string mtlDir = GetDirectory(mtlPath);
+                        texCandidates.push_back(mtlDir + texname);
+                        texCandidates.push_back(dir + texname);
+                        texCandidates.push_back(dir + "1997/" + texname);
+                        texCandidates.push_back(dir + "textures/" + texname);
+                        texCandidates.push_back(dir + "Textures/" + texname);
+                        std::string foundTex;
+                        for(const auto &tc : texCandidates){ std::ifstream tt(tc); if(tt.is_open()){ foundTex=tc; break; }}
+                        if(!foundTex.empty() && !activeMat.empty()){
+                            materialToTexture[activeMat] = foundTex;
+                            std::cout << "Material '"<<activeMat<<"' -> texture '"<<foundTex<<"'" << std::endl;
+                        } else {
+                            std::cout << "Texture '"<<texname<<"' not found for material '"<<activeMat<<"' (searched MTL dir + fallbacks)" << std::endl;
                         }
                     }
                 }
             }
-        }
-        else {
+        } else {
             std::cerr << "Failed to open MTL at: " << mtlPath << " ; trying filename only: " << mtlFileName << std::endl;
             // try mtl in same working folder
             std::ifstream mtl2(mtlFileName);
@@ -254,6 +308,19 @@ bool Model::LoadOBJ(const std::string& path) {
         if (loadTextures) {
             auto it = materialToTexture.find(matName);
             if (it != materialToTexture.end()) texPath = it->second;
+            else {
+                // Try heuristic: texture filename same as model or material name with common extensions
+                static const char* exts[] = {".png",".jpg",".jpeg",".tga",".bmp"};
+                std::string dir = GetDirectory(path);
+                for (auto ext: exts){
+                    std::string guess1 = dir + matName + ext;
+                    std::ifstream g1(guess1); if(g1.is_open()){ texPath=guess1; break; }
+                    std::string baseNoExt = fname.substr(0, fname.find_last_of('.'));
+                    std::string guess2 = dir + baseNoExt + ext;
+                    std::ifstream g2(guess2); if(g2.is_open()){ texPath=guess2; break; }
+                }
+                if(!texPath.empty()) std::cout << "Heuristic matched texture for material '"<<matName<<"': "<<texPath<<std::endl;
+            }
         }
 
         if (!texPath.empty()) {

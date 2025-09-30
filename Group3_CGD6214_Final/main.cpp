@@ -42,11 +42,11 @@ bool gUseDeferred = false; // removed static for GUI access
 bool gDeferredKeyPressed = false; // removed static
 DeferredRenderer gDeferred; // removed static
 
-// Wireframe toggles
-bool gWireframeAll = false;        // 1 toggles
-bool gWireframeRoofs = false;      // 2 toggles (only roofs)
-bool gWireframeBlock = false;      // 3 toggles (only the scene graph "Block" node)
-SceneNode* gBlockNode = nullptr;   // assigned after creation
+// Wireframe toggles (cleaned)
+bool gWireframeAll = false;        // 1: all buildings only
+bool gWireframeRoofs = false;      // 2: roofs only
+bool gWireframeWorld = false;      // 3: entire world (everything)
+SceneNode* gBlockNode = nullptr;   // retained for potential future use
 
 float timeOfDay = 12.0f;
 const float DAY_CYCLE_DURATION = 60.0f;
@@ -743,15 +743,13 @@ void main() {
 }
 )";
 
-    spotlightShader.LoadFromString(spotVert, spotFrag);
-
-    // Create geometry
-    GLuint cubeVAO = createCube();
-    GLuint groundVAO = createGround();
-    GLuint roofVAO = createTriangularRoof();
-    GLuint cylinderVAO = createCylinder();
-    // create pool VAO
-    GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
+// Create geometry
+GLuint cubeVAO = createCube();
+GLuint groundVAO = createGround();
+GLuint roofVAO = createTriangularRoof();
+GLuint cylinderVAO = createCylinder();
+// create pool VAO
+GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
 
     // Water shader
     Shader waterShader;
@@ -895,6 +893,46 @@ void main() {
     }
     if (!visionLoaded) {
         std::cout << "Warning: visiongt1.obj not found. Place visiongt1.obj (and visiongt.mlt/associated textures) in project folder or Models/." << std::endl;
+    }
+    // Load Supra model (with MTL + textures)
+    Model supraModel; bool supraLoaded=false; 
+    float supraScale=2.00f;            // visible scale
+    float supraX=-115.f;              // start near west edge
+    float supraZ=-6.0f;               // lane Z
+    float supraY=0.8f;                // lane Y height
+    float supraSpeed=28.0f;           // m/s
+    int   supraDir=1;                 // +X direction initially
+    float supraYaw=0.0f;              // dynamic direction yaw
+    const float supraModelBaseYaw = glm::radians(90.0f); // rotate model 90 degrees so it faces +X instead of +Z
+    {
+        std::vector<std::string> supraPaths={
+            "3D/supra/1997/supra.obj",      // new nested folder path (contains supra.mtl)
+            "3D/supra/supra.obj",
+            "3D/suprs/supra.obj",      // alternate folder user mentioned for textures/images
+            "3D/supra.obj",
+            "3D/supra/Supra.obj"
+        };
+        for(const auto &p: supraPaths){ if(supraModel.LoadOBJ(p)){ supraLoaded=true; std::cout<<"Supra model loaded from: "<<p<<std::endl; break; }}
+        if(!supraLoaded) std::cout<<"Warning: supra.obj not found (searched nested 1997 folder)."<<std::endl;
+    }
+    // Load Corolla AE104 model (similar movement to Supra, opposite lane/direction)
+    Model corollaModel; bool corollaLoaded=false; 
+    float corollaScale=0.02f;          // adjust if too big/small
+    float corollaX=115.f;             // start near east edge
+    float corollaZ=+6.0f;             // opposite lane (positive Z)
+    float corollaY=0.8f;              // road height
+    float corollaSpeed=22.0f;         // slightly slower
+    int   corollaDir=-1;              // move -X initially (westbound)
+    float corollaYaw=0.0f;            // dynamic yaw
+    const float corollaModelBaseYaw = glm::radians(90.0f); // assume forward +Z in file
+    {
+        std::vector<std::string> corollaPaths={
+            "3D/corolla/corolla_ae104.obj",
+            "3D/corolla_ae104.obj",
+            "3D/corolla/ae104.obj"
+        };
+        for(const auto &p: corollaPaths){ if(corollaModel.LoadOBJ(p)){ corollaLoaded=true; std::cout<<"Corolla AE104 model loaded from: "<<p<<std::endl; break; }}
+        if(!corollaLoaded) std::cout<<"Warning: corolla_ae104.obj not found (expected under 3D/corolla/)."<<std::endl;
     }
 
     // Free-space placement for visiongt model: park beside the highway (Bugatti showcase)
@@ -1138,6 +1176,20 @@ void main() {
         camera.UpdateOrbitalCamera(deltaTime);
         camera.UpdateTransition(deltaTime);
         camera.UpdateFirstPerson(deltaTime); // update jump/gravity if in first-person
+        // Update moving Supra along east-west highway lane (mirrors Traffic.cpp lane positions)
+        if(supraLoaded){
+            supraX += supraDir * supraSpeed * deltaTime;
+            if(supraX > 120.f){ supraX=120.f; supraDir=-1; }
+            else if(supraX < -120.f){ supraX=-120.f; supraDir=1; }
+            supraYaw = (supraDir>0)? supraModelBaseYaw : (supraModelBaseYaw + glm::radians(180.0f));
+        }
+        // Update moving Corolla on opposite lane
+        if(corollaLoaded){
+            corollaX += corollaDir * corollaSpeed * deltaTime;
+            if(corollaX > 120.f){ corollaX=120.f; corollaDir=-1; }
+            else if(corollaX < -120.f){ corollaX=-120.f; corollaDir=1; }
+            corollaYaw = (corollaDir>0)? corollaModelBaseYaw : (corollaModelBaseYaw + glm::radians(180.0f));
+        }
 
         // Compute skyIntensity (shared for both forward & deferred paths)
         float skyIntensity;
@@ -1151,8 +1203,9 @@ void main() {
         }
 
         if (gUseDeferred) {
+            // Whole-world wireframe for deferred geometry pass
+            if (gWireframeWorld) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             // Ensure initialized (in case toggled before context established)
-            // (Already initialized on toggle; extra safety)
             // Geometry pass
             gDeferred.BeginGeometryPass();
             Shader &geom = gDeferred.GetGeometryShader();
@@ -1194,6 +1247,7 @@ void main() {
             // Scene graph example hierarchy
             sceneGraph.Draw(geom);
             gDeferred.EndGeometryPass();
+            if (gWireframeWorld) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
             // Lighting pass
             gDeferred.BeginLightingPass();
@@ -1223,6 +1277,8 @@ void main() {
         }
         // -------- Forward rendering path (existing) --------
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // Explicitly set polygon mode every frame so toggling OFF restores fill
+        glPolygonMode(GL_FRONT_AND_BACK, gWireframeWorld ? GL_LINE : GL_FILL);
         buildingShader.Use();
         buildingShader.SetFloat("bumpIntensity", 0.3f);
         buildingShader.SetFloat("time", (float)glfwGetTime());
@@ -1235,15 +1291,6 @@ void main() {
 
         // Draw scene graph hierarchical models (District->Block->House->Roof->Window)
         sceneGraph.Draw(buildingShader);
-        if (gWireframeBlock && !gWireframeAll && gBlockNode) {
-            // Draw block node again in wireframe with depth func LEQUAL so lines overlay
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            GLint prevDepthFunc; glGetIntegerv(GL_DEPTH_FUNC, &prevDepthFunc);
-            glDepthFunc(GL_LEQUAL);
-            gBlockNode->Draw(buildingShader);
-            glDepthFunc(prevDepthFunc);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        }
 
         // Set lighting uniforms (sun-like lighting)
         // Predeclare light containers so we can use them for a second additive pass (glow)
@@ -1566,8 +1613,8 @@ void main() {
         // Highway center divider (solid yellow line)
         for (int x = -120; x <= 120; x += 2) {
             model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(x, 0.07f, 0.0f));
-            model = glm::scale(model, glm::vec3(2.0f, 0.02f, 0.3f));
+            model = glm::translate(model, glm::vec3(0.0f, 0.07f, x));
+            model = glm::scale(model, glm::vec3(0.3f, 0.02f, 2.0f));
             buildingShader.SetMat4("model", model);
             buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.9f, 0.1f));  // Yellow divider
 
@@ -1859,6 +1906,28 @@ void main() {
             vm = glm::scale(vm, glm::vec3(visionScale, visionScale, visionScale));
             // ensure model uses current building shader
             visionModel.Draw(buildingShader, vm);
+        }
+        // Render moving Supra (textured) on highway
+        if(supraLoaded){
+            buildingShader.SetBool("hasTexture", true);
+            buildingShader.SetVec3("objectColor", glm::vec3(1.0f));
+            glm::mat4 sm = glm::mat4(1.0f);
+            sm = glm::translate(sm, glm::vec3(supraX, supraY, supraZ));
+            sm = glm::rotate(sm, supraYaw, glm::vec3(0,1,0));
+            sm = glm::scale(sm, glm::vec3(supraScale));
+            supraModel.Draw(buildingShader, sm);
+            buildingShader.SetBool("hasTexture", false);
+        }
+        // Render moving Corolla
+        if(corollaLoaded){
+            buildingShader.SetBool("hasTexture", true);
+            buildingShader.SetVec3("objectColor", glm::vec3(1.0f));
+            glm::mat4 cm = glm::mat4(1.0f);
+            cm = glm::translate(cm, glm::vec3(corollaX, corollaY, corollaZ));
+            cm = glm::rotate(cm, corollaYaw, glm::vec3(0,1,0));
+            cm = glm::scale(cm, glm::vec3(corollaScale));
+            corollaModel.Draw(buildingShader, cm);
+            buildingShader.SetBool("hasTexture", false);
         }
 
         // --- SECOND PASS: additive glow pass for point lights and spotlights (multi-pass lighting enhancement)
@@ -2156,11 +2225,11 @@ void processInput(GLFWwindow* window)
     static Shader* currentShader = nullptr;
     static bool key1Pressed=false, key2Pressed=false, key3Pressed=false;
     // Wireframe toggles
-    if(glfwGetKey(window, GLFW_KEY_1)==GLFW_PRESS && !key1Pressed){ key1Pressed=true; gWireframeAll = !gWireframeAll; std::cout<<"[Wireframe-All] "<<(gWireframeAll?"ON":"OFF")<<std::endl; }
+    if(glfwGetKey(window, GLFW_KEY_1)==GLFW_PRESS && !key1Pressed){ key1Pressed=true; gWireframeAll = !gWireframeAll; std::cout<<"[Wireframe-All Buildings] "<<(gWireframeAll?"ON":"OFF")<<std::endl; }
     if(glfwGetKey(window, GLFW_KEY_1)==GLFW_RELEASE) key1Pressed=false;
     if(glfwGetKey(window, GLFW_KEY_2)==GLFW_PRESS && !key2Pressed){ key2Pressed=true; gWireframeRoofs = !gWireframeRoofs; std::cout<<"[Wireframe-Roofs] "<<(gWireframeRoofs?"ON":"OFF")<<std::endl; }
     if(glfwGetKey(window, GLFW_KEY_2)==GLFW_RELEASE) key2Pressed=false;
-    if(glfwGetKey(window, GLFW_KEY_3)==GLFW_PRESS && !key3Pressed){ key3Pressed=true; gWireframeBlock = !gWireframeBlock; std::cout<<"[Wireframe-Block Node] "<<(gWireframeBlock?"ON":"OFF")<<std::endl; }
+    if(glfwGetKey(window, GLFW_KEY_3)==GLFW_PRESS && !key3Pressed){ key3Pressed=true; gWireframeWorld = !gWireframeWorld; std::cout<<"[Wireframe-World] "<<(gWireframeWorld?"ON":"OFF")<<std::endl; }
     if(glfwGetKey(window, GLFW_KEY_3)==GLFW_RELEASE) key3Pressed=false;
 
     // Toggle deferred rendering (F6)
