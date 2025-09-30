@@ -24,6 +24,9 @@ public:
 
     void SetMesh(std::shared_ptr<Mesh> mesh);
     std::shared_ptr<Mesh> GetMesh() const;
+    void SetColor(const glm::vec3& c) { nodeColor = c; useColor = true; }
+    bool HasColor() const { return useColor; }
+    glm::vec3 GetColor() const { return nodeColor; }
 
     // Draw uses parentTransform (default identity). Internal caching avoids recompute if not dirty.
     void Draw(Shader& shader, const glm::mat4& parentTransform = glm::mat4(1.0f));
@@ -43,4 +46,8 @@ private:
     bool worldDirty;
 
     std::shared_ptr<Mesh> mesh;
+
+    // new: per-node color (optional)
+    glm::vec3 nodeColor{ 1.0f,1.0f,1.0f };
+    bool useColor = false;
 };

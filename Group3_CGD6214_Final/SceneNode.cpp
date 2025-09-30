@@ -58,6 +58,9 @@ void SceneNode::Draw(Shader& shader, const glm::mat4& parentTransform) {
         world = GetWorldTransform();
     }
 
-    if (mesh) mesh->Draw(shader, world);
+    if (mesh){
+        if(useColor){ shader.SetVec3("objectColor", nodeColor); }
+        mesh->Draw(shader, world);
+    }
     for (auto& child : children) child->Draw(shader, world);
 }

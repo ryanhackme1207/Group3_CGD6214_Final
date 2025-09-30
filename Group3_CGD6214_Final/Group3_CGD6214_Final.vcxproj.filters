@@ -60,6 +60,9 @@
     <ClCompile Include="DeferredRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SimpleGUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">
@@ -99,6 +102,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DeferredRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleGUI.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -142,8 +148,18 @@
     <None Include="shaders\hdr.frag">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\bloom_extract.frag" />
-    <None Include="shaders\bloom_blur.frag" />
+    <None Include="shaders\bloom_blur.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\bloom_extract.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\ssao.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\ssao_blur.frag">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Image Include="textures\nx.jpg">
