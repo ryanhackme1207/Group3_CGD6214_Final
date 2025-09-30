@@ -51,7 +51,9 @@ private:
     // state
     float m_cursorX=10.f,m_cursorY=10.f,m_panelWidth=260.f,m_lineHeight=16.f; GLFWwindow* m_window=nullptr; bool m_mouseDown=false,m_mousePressed=false; double m_mouseX=0.0,m_mouseY=0.0; bool m_initialized=false,m_visible=true; double m_timeAccum=0.0; int m_frameCount=0; float m_fps=0.f; unsigned int m_fontTex=0,m_VAO=0,m_VBO=0,m_shader=0; int m_uProj=-1,m_uTex=-1; struct Vertex{ float x,y,u,v; uint32_t color; }; std::vector<Vertex> m_vertices; bool regionHit(float x,float y,float w,float h) const;
     // hierarchy state
-    SceneNode* m_sceneRoot=nullptr; SceneNode* m_selectedNode=nullptr; std::unordered_map<SceneNode*, bool> m_openState; bool m_prevZ=false; bool m_prevX=false; bool m_autoExpandedOnce=false; bool m_zPressedFrame=false; bool m_xPressedFrame=false;
+    SceneNode* m_sceneRoot=nullptr; SceneNode* m_selectedNode=nullptr; SceneNode* m_hoveredNode=nullptr; std::unordered_map<SceneNode*, bool> m_openState; bool m_prevZ=false; bool m_prevX=false; bool m_autoExpandedOnce=false; bool m_zPressedFrame=false; bool m_xPressedFrame=false;
+    // keyboard navigation (new)
+    std::vector<SceneNode*> m_visibleNodes; int m_navIndex=-1; bool m_prevDown=false; bool m_prevUp=false; bool m_prevEnter=false; bool m_downPressedFrame=false; bool m_upPressedFrame=false; bool m_enterPressedFrame=false;
     // performance history
     static const int FRAME_HISTORY = 120; float m_frameTimes[FRAME_HISTORY]={0}; int m_frameIndex=0; bool m_historyFilled=false; float m_minFrameMs=0.f; float m_maxFrameMs=0.f; float m_avgFrameMs=0.f;
     // picking

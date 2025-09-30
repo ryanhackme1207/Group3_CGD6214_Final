@@ -13,7 +13,7 @@ using namespace glm;
 #include "Camera.h"
 #include "Shader.h"
 #include "Mesh.h"
-#include "main.h" // correct include (lowercase) to expose getGroundIndexCount()
+#include "main.h"
 #include "Model.h"
 
 #include "SceneGraph.h"
@@ -21,8 +21,8 @@ using namespace glm;
 #include "SpatialPartition.h"
 
 #include "Pedestrians.h"
-#include "Traffic.h" // pull in car structures and traffic functions
-#include "DeferredRenderer.h" // added for deferred rendering
+#include "Traffic.h"
+#include "DeferredRenderer.h"
 #include "SimpleGUI.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -41,6 +41,12 @@ bool msaaKeyPressed = false;
 bool gUseDeferred = false; // removed static for GUI access
 bool gDeferredKeyPressed = false; // removed static
 DeferredRenderer gDeferred; // removed static
+
+// Wireframe toggles
+bool gWireframeAll = false;        // 1 toggles
+bool gWireframeRoofs = false;      // 2 toggles (only roofs)
+bool gWireframeBlock = false;      // 3 toggles (only the scene graph "Block" node)
+SceneNode* gBlockNode = nullptr;   // assigned after creation
 
 float timeOfDay = 12.0f;
 const float DAY_CYCLE_DURATION = 60.0f;
@@ -478,12 +484,7 @@ static void drawCity(const std::vector<BuildingInfo>& buildings, const std::vect
     const glm::vec3 camPos = camera.GetPosition();
     for (const auto &b : buildings) {
         float dist = glm::distance(camPos, glm::vec3(b.pos.x, 0.0f, b.pos.z));
-        // LOD thresholds
-        // 0..100: full detail (building + optional roof)
-        // 100..200: simplified (single box, no roof)
-        // >200: very far - skip rendering (or render tiny marker)
         if (dist <= 100.0f) {
-            // full detail
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(b.pos.x, b.height/2.0f, b.pos.z));
             model = glm::scale(model, glm::vec3(b.width, b.height, b.depth));
@@ -491,7 +492,6 @@ static void drawCity(const std::vector<BuildingInfo>& buildings, const std::vect
             buildingShader.SetVec3("objectColor", b.color);
             glBindVertexArray(cubeVAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
-            // roofs
             if (b.hasRoof) {
                 float roofHeight = glm::min(b.height*0.6f + 1.0f, 8.0f);
                 float roofY = b.height + roofHeight*0.5f;
@@ -500,21 +500,20 @@ static void drawCity(const std::vector<BuildingInfo>& buildings, const std::vect
                 roofModel = glm::scale(roofModel, glm::vec3(b.width*1.02f, roofHeight, b.depth*1.02f));
                 buildingShader.SetMat4("model", roofModel);
                 buildingShader.SetVec3("objectColor", b.roofColor);
+                if (gWireframeRoofs && !gWireframeAll) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
                 glBindVertexArray(roofVAO);
                 glDrawArrays(GL_TRIANGLES, 0, 18);
+                if (gWireframeRoofs && !gWireframeAll) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             }
         } else if (dist <= 200.0f) {
-            // simplified LOD: one box, no roof, slightly darker to indicate distance
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(b.pos.x, (b.height*0.5f) / 1.5f, b.pos.z));
-            // scale down height a bit for mid LOD
             model = glm::scale(model, glm::vec3(b.width * 0.9f, b.height * 0.66f, b.depth * 0.9f));
             buildingShader.SetMat4("model", model);
             buildingShader.SetVec3("objectColor", b.color * 0.85f);
             glBindVertexArray(cubeVAO);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         } else {
-            // very far: optionally render a tiny marker or skip entirely. We'll draw a very small box to preserve silhouette.
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(b.pos.x, 1.0f, b.pos.z));
             model = glm::scale(model, glm::vec3(1.0f, 2.0f, 1.0f));
@@ -525,7 +524,7 @@ static void drawCity(const std::vector<BuildingInfo>& buildings, const std::vect
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
     }
-    // small trees - use LOD: only render up close; mid distance draw simplified cube foliage; far skip
+    // small trees
     for (const auto &t : smallTrees) {
         float dist = glm::distance(camPos, glm::vec3(t.pos.x, 0.0f, t.pos.z));
         if (dist > 120.0f) continue; // skip distant small trees
@@ -976,6 +975,7 @@ void main() {
     glm::mat4 blockTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
     block->SetLocalTransform(blockTransform);
     district->AddChild(block);
+    gBlockNode = block.get();
 
     // Level 3: House (child of block)
     auto house = std::make_shared<SceneNode>("House");
@@ -1233,8 +1233,17 @@ void main() {
         buildingShader.SetMat4("projection", projection);
         buildingShader.SetMat4("view", view);
 
-        // Draw scene graph hierarchical models
-        // This renders the small hierarchy: District->Block->House->Roof->Window        // sceneGraph.Draw(buildingShader);
+        // Draw scene graph hierarchical models (District->Block->House->Roof->Window)
+        sceneGraph.Draw(buildingShader);
+        if (gWireframeBlock && !gWireframeAll && gBlockNode) {
+            // Draw block node again in wireframe with depth func LEQUAL so lines overlay
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            GLint prevDepthFunc; glGetIntegerv(GL_DEPTH_FUNC, &prevDepthFunc);
+            glDepthFunc(GL_LEQUAL);
+            gBlockNode->Draw(buildingShader);
+            glDepthFunc(prevDepthFunc);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
 
         // Set lighting uniforms (sun-like lighting)
         // Predeclare light containers so we can use them for a second additive pass (glow)
@@ -1737,26 +1746,23 @@ void main() {
 
         // === FIRST: ADD ICONIC TOWERS ===
 
+        if (gWireframeAll) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
         // KL Tower (Kuala Lumpur Tower) - 421m tall
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(25.0f, 210.5f, 25.0f));  // Half of 421m height
+        model = glm::translate(model, glm::vec3(25.0f, 210.5f, 25.0f));
         model = glm::scale(model, glm::vec3(3.0f, 421.0f, 3.0f));
         buildingShader.SetMat4("model", model);
-        buildingShader.SetVec3("objectColor", glm::vec3(0.8f, 0.8f, 0.9f));  // Light metallic
-
+        buildingShader.SetVec3("objectColor", glm::vec3(0.8f, 0.8f, 0.9f));
         glBindVertexArray(cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // (push KL tower footprint to buildingBoxes to avoid trees too close)
-        buildingBoxes.emplace_back(glm::vec4(25.0f, 25.0f, 3.0f * 0.5f, 421.0f * 0.5f));
 
         // KL Tower antenna/spire
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(25.0f, 421.0f + 15.0f, 25.0f));
         model = glm::scale(model, glm::vec3(0.5f, 30.0f, 0.5f));
         buildingShader.SetMat4("model", model);
-        buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.1f, 0.1f));  // Red antenna
-
+        buildingShader.SetVec3("objectColor", glm::vec3(0.9f, 0.1f, 0.1f));
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         // KL Tower observation deck
@@ -1765,7 +1771,6 @@ void main() {
         model = glm::scale(model, glm::vec3(8.0f, 10.0f, 8.0f));
         buildingShader.SetMat4("model", model);
         buildingShader.SetVec3("objectColor", glm::vec3(0.7f, 0.7f, 0.8f));
-
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         // KL Tower top glow (night only)
@@ -1841,8 +1846,10 @@ void main() {
 
         // Draw deterministic city generated at startup
         drawCity(buildings, smallTrees, buildingShader, cubeVAO, roofVAO, cylinderVAO);
-        // Call residential decorative lights after buildings are placed (use footprints from startup generateCity)
+        // Call residential decorative lights after buildings are placed
         renderResidentialLights(buildingShader, cubeVAO, cylinderVAO, buildingBoxes, (float)glfwGetTime());
+
+        if (gWireframeAll) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
         // Render external model visiongt if loaded
         if (visionLoaded) {
@@ -1854,22 +1861,7 @@ void main() {
             visionModel.Draw(buildingShader, vm);
         }
 
-        // === Place and render a Bugatti showcase if available ===
-        if (!cars.empty()) {
-            // Find a suitable parking spot in the mall parking lot for the showcase car
-            glm::vec3 bugattiSpot = glm::vec3(60.0f, 0.85f, 85.0f);
-
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, bugattiSpot);
-            model = glm::scale(model, glm::vec3(1.5f, 1.5f, 1.5f));
-            buildingShader.SetMat4("model", model);
-            buildingShader.SetVec3("objectColor", glm::vec3(1.0f, 0.0f, 0.0f)); // Bright red for Bugatti
-
-            glBindVertexArray(cubeVAO);
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-        }
-
-        // SECOND PASS: additive glow pass for point lights and spotlights (multi-pass lighting enhancement)
+        // --- SECOND PASS: additive glow pass for point lights and spotlights (multi-pass lighting enhancement)
         if (!pointPositions.empty() || !spotPositions.empty()) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);
@@ -2162,6 +2154,15 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 void processInput(GLFWwindow* window)
 {
     static Shader* currentShader = nullptr;
+    static bool key1Pressed=false, key2Pressed=false, key3Pressed=false;
+    // Wireframe toggles
+    if(glfwGetKey(window, GLFW_KEY_1)==GLFW_PRESS && !key1Pressed){ key1Pressed=true; gWireframeAll = !gWireframeAll; std::cout<<"[Wireframe-All] "<<(gWireframeAll?"ON":"OFF")<<std::endl; }
+    if(glfwGetKey(window, GLFW_KEY_1)==GLFW_RELEASE) key1Pressed=false;
+    if(glfwGetKey(window, GLFW_KEY_2)==GLFW_PRESS && !key2Pressed){ key2Pressed=true; gWireframeRoofs = !gWireframeRoofs; std::cout<<"[Wireframe-Roofs] "<<(gWireframeRoofs?"ON":"OFF")<<std::endl; }
+    if(glfwGetKey(window, GLFW_KEY_2)==GLFW_RELEASE) key2Pressed=false;
+    if(glfwGetKey(window, GLFW_KEY_3)==GLFW_PRESS && !key3Pressed){ key3Pressed=true; gWireframeBlock = !gWireframeBlock; std::cout<<"[Wireframe-Block Node] "<<(gWireframeBlock?"ON":"OFF")<<std::endl; }
+    if(glfwGetKey(window, GLFW_KEY_3)==GLFW_RELEASE) key3Pressed=false;
+
     // Toggle deferred rendering (F6)
     if (glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS && !gDeferredKeyPressed) {
         gDeferredKeyPressed = true;
@@ -2244,7 +2245,7 @@ void processInput(GLFWwindow* window)
     if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
         if(!bloomTogglePressed){ bloomTogglePressed=true; if(gUseDeferred){ gDeferred.SetBloomEnabled(!gDeferred.IsBloomEnabled()); std::cout<<"Bloom: "<<(gDeferred.IsBloomEnabled()?"ON":"OFF")<<std::endl; }}
     } else { bloomTogglePressed=false; }
-    if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) { if(gUseDeferred){ float bi=gDeferred.GetBloomIntensity(); gDeferred.SetBloomIntensity(std::min(5.0f, bi + 0.5f*deltaTime)); }}
+    if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) { if(gUseDeferred){ float bi=gDeferred.GetBloomIntensity(); gDeferred.SetBloomIntensity(std::min(5.0f, bi + 0.5f*deltaTime)); } }
 
     // HDR exposure controls J/K
     static float exposureChangeRate = 0.5f;
