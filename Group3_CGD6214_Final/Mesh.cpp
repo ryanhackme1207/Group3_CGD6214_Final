@@ -302,7 +302,7 @@ GLuint Mesh::LoadTextureFromFile(const std::string& path)
     return tex;
 }
 
-// Attempt to load associated normal map using naming conventions (e.g. diffuse.png -> diffuse_normal.png or *_n.png)
+// Attempt to load associated normal map using naming conventions 
 GLuint Mesh::LoadAssociatedNormalMap(const std::string& diffusePath)
 {
     // try variants
@@ -323,7 +323,7 @@ GLuint Mesh::LoadAssociatedNormalMap(const std::string& diffusePath)
     return 0;
 }
 
-// Attempt to load associated specular map using naming conventions (e.g. diffuse.png -> diffuse_s.png or _specular.png)
+// Attempt to load associated specular map using naming conventions 
 GLuint Mesh::LoadAssociatedSpecularMap(const std::string& diffusePath)
 {
     std::vector<std::string> candidates;
@@ -366,16 +366,47 @@ GLuint Mesh::LoadAssociatedEmissionMap(const std::string& diffusePath)
 // Simple helper to create a cube mesh (returns by value; user can wrap in shared_ptr)
 Mesh Mesh::CreateCube()
 {
+    // 24 unique vertices (4 per face) with normals and UVs
     std::vector<float> vertices = {
-        // positions        // normals        // texcoords
+        // pos              // normal        // uv
+        // -Z face
         -0.5f,-0.5f,-0.5f,  0,0,-1,  0,0,
          0.5f,-0.5f,-0.5f,  0,0,-1,  1,0,
          0.5f, 0.5f,-0.5f,  0,0,-1,  1,1,
         -0.5f, 0.5f,-0.5f,  0,0,-1,  0,1,
-        // ... other faces (omitted for brevity) -- not needed for initial tests
+        // +Z face
+        -0.5f,-0.5f, 0.5f,  0,0, 1,  0,0,
+         0.5f,-0.5f, 0.5f,  0,0, 1,  1,0,
+         0.5f, 0.5f, 0.5f,  0,0, 1,  1,1,
+        -0.5f, 0.5f, 0.5f,  0,0, 1,  0,1,
+        // -X face
+        -0.5f,-0.5f,-0.5f, -1,0,0,  0,0,
+        -0.5f, 0.5f,-0.5f, -1,0,0,  1,0,
+        -0.5f, 0.5f, 0.5f, -1,0,0,  1,1,
+        -0.5f,-0.5f, 0.5f, -1,0,0,  0,1,
+        // +X face
+         0.5f,-0.5f,-0.5f,  1,0,0,  0,0,
+         0.5f, 0.5f,-0.5f,  1,0,0,  1,0,
+         0.5f, 0.5f, 0.5f,  1,0,0,  1,1,
+         0.5f,-0.5f, 0.5f,  1,0,0,  0,1,
+        // -Y face
+        -0.5f,-0.5f,-0.5f,  0,-1,0, 0,1,
+        -0.5f,-0.5f, 0.5f,  0,-1,0, 0,0,
+         0.5f,-0.5f, 0.5f,  0,-1,0, 1,0,
+         0.5f,-0.5f,-0.5f, 0,-1,0, 1,1,
+        // +Y face
+        -0.5f, 0.5f,-0.5f,  0, 1,0, 0,1,
+        -0.5f, 0.5f, 0.5f,  0, 1,0, 0,0,
+         0.5f, 0.5f, 0.5f,  0, 1,0, 1,0,
+         0.5f, 0.5f,-0.5f, 0, 1,0, 1,1,
     };
-    // simple index list for a single quad (placeholder)
-    std::vector<unsigned int> indices = { 0,1,2, 0,2,3 };
+    std::vector<unsigned int> indices;
+    indices.reserve(36);
+    auto addFace=[&](unsigned int start){
+        indices.push_back(start+0); indices.push_back(start+1); indices.push_back(start+2);
+        indices.push_back(start+0); indices.push_back(start+2); indices.push_back(start+3);
+    };
+    for(unsigned int f=0; f<6; ++f) addFace(f*4);
     return Mesh(vertices, indices);
 }
 

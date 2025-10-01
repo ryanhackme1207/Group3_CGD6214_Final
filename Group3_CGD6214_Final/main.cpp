@@ -47,6 +47,8 @@ bool gWireframeAll = false;        // 1: all buildings only
 bool gWireframeRoofs = false;      // 2: roofs only
 bool gWireframeWorld = false;      // 3: entire world (everything)
 SceneNode* gBlockNode = nullptr;   // retained for potential future use
+SceneNode* gHouseNode = nullptr;   // new: for mesh editing demo
+SceneNode* gRoofNode = nullptr;    // new: for mesh editing demo
 
 float timeOfDay = 12.0f;
 const float DAY_CYCLE_DURATION = 60.0f;
@@ -276,7 +278,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
-GLuint createCube();
+GLuint createCubeInternal();
 // prototypes for helpers implemented in SceneHelpers.cpp
 GLuint createGround();
 GLuint createTriangularRoof();
@@ -563,7 +565,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
-GLuint createCube();
+GLuint createCubeInternal();
 // prototypes for helpers implemented in SceneHelpers.cpp
 GLuint createGround();
 GLuint createTriangularRoof();
@@ -744,7 +746,7 @@ void main() {
 )";
 
 // Create geometry
-GLuint cubeVAO = createCube();
+GLuint cubeVAO = createCubeInternal();
 GLuint groundVAO = createGround();
 GLuint roofVAO = createTriangularRoof();
 GLuint cylinderVAO = createCylinder();
@@ -1004,7 +1006,9 @@ GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
 
     // Level 1: District
     auto district = std::make_shared<SceneNode>("District");
-    glm::mat4 distTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-40.0f, 0.0f, -40.0f));
+    // Repositioned beside the east-west highway (z ~ 0), just beyond sidewalk clearance (~15.3). Was (110,0,110).
+    // Place at x=40 (along highway), z=22 (north side), avoiding road/sidewalk overlap.
+    glm::mat4 distTransform = glm::translate(glm::mat4(1.0f), glm::vec3(40.0f, 0.0f, 22.0f));
     district->SetLocalTransform(distTransform);
     rootNode->AddChild(district);
 
@@ -1022,6 +1026,7 @@ GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
     house->SetLocalTransform(houseTransform);
     house->SetMesh(cubeMesh);
     block->AddChild(house);
+    gHouseNode = house.get(); // store pointer for mesh ops demo
 
     // Level 4: Roof (child of house)
     auto roofNode = std::make_shared<SceneNode>("Roof");
@@ -1031,14 +1036,7 @@ GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
     // Use cube mesh scaled thin to approximate roof
     roofNode->SetMesh(cubeMesh);
     house->AddChild(roofNode);
-
-    // Level 5: Window (child of roof) to satisfy >=4 levels beyond root
-    auto windowNode = std::make_shared<SceneNode>("Window");
-    glm::mat4 winTransform = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, -0.8f, 2.6f));
-    winTransform = glm::scale(winTransform, glm::vec3(1.2f, 1.0f, 0.05f));
-    windowNode->SetLocalTransform(winTransform);
-    windowNode->SetMesh(cubeMesh);
-    roofNode->AddChild(windowNode);
+    gRoofNode = roofNode.get(); // store pointer
 
     // Populate parked cars for the shopping mall parking lot
     // Mall center at (60, 0, 60)
@@ -2323,9 +2321,50 @@ void processInput(GLFWwindow* window)
 
     // Toggle GUI visibility F1
     static bool f1Pressed=false; if(glfwGetKey(window,GLFW_KEY_F1)==GLFW_PRESS){ if(!f1Pressed){ f1Pressed=true; SimpleGUI::Instance().ToggleVisible(); }} else if(glfwGetKey(window,GLFW_KEY_F1)==GLFW_RELEASE){ f1Pressed=false; }
+
+    // --- Mesh Editing Demo Keys ---
+    static bool f7Pressed=false, f8Pressed=false, f9Pressed=false; // debounce
+    static int houseSubdivisions=0;
+    if (glfwGetKey(window, GLFW_KEY_F7)==GLFW_PRESS && !f7Pressed) {
+        f7Pressed = true;
+        if (gHouseNode && gHouseNode->GetMesh() && houseSubdivisions < 2) { // limit to avoid explosion
+            std::cout << "[MeshEdit] Subdividing house mesh (level " << (houseSubdivisions+1) << ")" << std::endl;
+            gHouseNode->GetMesh()->SubdivideMidpoint();
+            houseSubdivisions++;
+        } else {
+            std::cout << "[MeshEdit] House subdivision limit reached or mesh missing." << std::endl;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_F7)==GLFW_RELEASE) f7Pressed=false;
+
+    if (glfwGetKey(window, GLFW_KEY_F8)==GLFW_PRESS && !f8Pressed) {
+        f8Pressed = true;
+        if (gRoofNode && gRoofNode->GetMesh()) {
+            std::cout << "[MeshEdit] Extruding roof mesh outward." << std::endl;
+            gRoofNode->GetMesh()->Extrude(0.08f); // small distance to show effect
+        } else {
+            std::cout << "[MeshEdit] Roof mesh not available for extrusion." << std::endl;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_F8)==GLFW_RELEASE) f8Pressed=false;
+
+    if (glfwGetKey(window, GLFW_KEY_F9)==GLFW_PRESS && !f9Pressed) {
+        f9Pressed = true;
+        if (gRoofNode && gRoofNode->GetMesh()) {
+            static unsigned int deformSeed = 1337u;
+            std::cout << "[MeshEdit] Applying displacement noise to roof (seed=" << deformSeed << ")." << std::endl;
+            gRoofNode->GetMesh()->DeformDisplace(0.05f, deformSeed++); // slight bumpiness
+        } else {
+            std::cout << "[MeshEdit] Roof mesh not available for displacement." << std::endl;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_F9)==GLFW_RELEASE) f9Pressed=false;
+    // --- End Mesh Editing Demo Keys ---
 }
 
-GLuint createCube()
+// Replace existing prototype and usage of createCube with unique internal name to avoid linker conflict
+// (old) GLuint createCube();
+GLuint createCubeInternal()
 {
     static const float srcVertices[] = {
         -0.5f,-0.5f,-0.5f, 0,0,-1, 0,0,
