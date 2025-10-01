@@ -1006,9 +1006,10 @@ GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
 
     // Level 1: District
     auto district = std::make_shared<SceneNode>("District");
-    // Repositioned beside the east-west highway (z ~ 0), just beyond sidewalk clearance (~15.3). Was (110,0,110).
-    // Place at x=40 (along highway), z=22 (north side), avoiding road/sidewalk overlap.
-    glm::mat4 distTransform = glm::translate(glm::mat4(1.0f), glm::vec3(40.0f, 0.0f, 22.0f));
+    // Position demo hierarchy beside the Bugatti (vision model). Push slightly outward from road center.
+    float pushDirZ = (visionPosition.z >= 0.0f ? 1.0f : -1.0f);
+    glm::vec3 demoBase = visionPosition + glm::vec3(6.0f, 0.0f, pushDirZ * 4.0f);
+    glm::mat4 distTransform = glm::translate(glm::mat4(1.0f), demoBase);
     district->SetLocalTransform(distTransform);
     rootNode->AddChild(district);
 
@@ -1547,7 +1548,6 @@ GLuint poolVAO = createPool(12.0f, 8.0f, 64, 48);
         model = glm::scale(model, glm::vec3(250.0f, 1.0f, 250.0f));
         buildingShader.SetMat4("model", model);
         buildingShader.SetVec3("objectColor", groundColor);
-        // groundVAO has an element array buffer (EBO) with index count from createGround(); use it for indexed draw
         glBindVertexArray(groundVAO);
         glDrawElements(GL_TRIANGLES, getGroundIndexCount(), GL_UNSIGNED_INT, 0);
 
